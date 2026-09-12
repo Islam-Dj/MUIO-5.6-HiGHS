@@ -1,0 +1,9 @@
+# build artefacts and installers are published as release assets, not committed
+*.exe
+!kit/solvers/*.exe
+build/
+dist/
+output/
+__pycache__/
+*.pyc
+*.log

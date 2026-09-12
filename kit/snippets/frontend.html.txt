@@ -1,0 +1,84 @@
+=============================================================================
+ FRONTEND CHANGES  (3 small edits)
+=============================================================================
+
+--- 1. WebAPP/App/View/DataFile.html : solver dropdown, next to the RUN button
+
+<select id="osy-solverSelect" class="btn btn-default btn-bold"
+    title="Optimization solver used by RUN MODEL"
+    style="display: none; border-radius: 10px; height: 34px; padding: 0 8px;">
+    <option value="cbc" selected="selected">CBC</option>
+    <option value="glpk">GLPK</option>
+    <option value="highs-exe">HiGHS (standalone)</option>
+    <option value="highs">HiGHS (highspy)</option>
+    <option value="highs-mosox">HiGHS (mosox)</option>
+</select>
+
+   In older MUIO builds the solver choice is a hidden radio group with
+   name="solver" - you can simply add the three <option>/<input> values there
+   instead and un-hide it.
+
+
+--- 2. WebAPP/App/View/DataFile.html : a log tab for HiGHS
+
+   next to the existing "CBC solver log" / "LP file (GLPK) log" tabs:
+
+<li>
+    <a data-toggle="tab" href="#tabHighsOutput" class="highsOutput" style="display: none;">
+        <i class="fa fa-lg fa-file-text-o "></i>
+        <span class="hidden-mobile hidden-tablet"> HiGHS solver log </span>
+    </a>
+</li>
+
+   and next to the other tab panes:
+
+<div class="tab-pane " id="tabHighsOutput">
+    <div class="jarviswidget ">
+        <div>
+            <div class="widget-body no-padding-bottom">
+                <fieldset>
+                    <section>
+                        <div id="osy-highsOutput"></div>
+                    </section>
+                </fieldset>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+--- 3. WebAPP/App/Controller/DataFile.js
+
+   a) read the dropdown instead of the hardcoded solver:
+
+      OLD:  let solver = 'cbc';
+      NEW:  let solver = $('#osy-solverSelect').val() || 'cbc';
+
+   b) show/hide the dropdown together with the RUN button - append to every
+      line that shows or hides #osy-run:
+
+      $("#osy-run").show();  ->  $("#osy-run").show(); $("#osy-solverSelect").show();
+      $("#osy-run").hide();  ->  $("#osy-run").hide(); $("#osy-solverSelect").hide();
+
+   c) fill the HiGHS tab - add after each place that fills #osy-lpOutput
+      (there are usually three: success, warning, error):
+
+      $("#osy-highsOutput").empty();
+      if (response.highs_message) {
+          $(".highsOutput").show();
+          $("#osy-highsOutput").html('<pre class="log-output">' + response.highs_message + '</pre>');
+      } else {
+          $(".highsOutput").hide();
+      }
+
+   d) hide the tab together with the other log tabs:
+
+      $(".lpOutput").hide();  ->  $(".lpOutput").hide(); $(".highsOutput").hide();
+
+
+--- OPTIONAL but recommended: make the app work on any port
+
+   WebAPP/Classes/Base.Class.js
+
+      OLD:  apiUrl = "http://127.0.0.1:5002/";
+      NEW:  apiUrl = window.location.origin + "/";
