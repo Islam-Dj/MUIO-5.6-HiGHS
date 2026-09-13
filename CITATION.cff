@@ -1,0 +1,64 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "MUIO 5.6 - Community Edition (HiGHS)"
+abstract: >-
+  A Windows build of MUIO (Modelling User Interface for OSeMOSYS) with additional
+  solver options, including HiGHS, for faster solving of large OSeMOSYS and CLEWs
+  models. Solver output is converted to the format MUIO already reads, so results
+  and visualisations are unchanged.
+type: software
+authors:
+  - family-names: "DJEDAA"
+    given-names: "Nour El Islam"
+    affiliation: "CREAD - Centre de Recherche en Economie Appliquee pour le Developpement, Algeria"
+version: "5.6.1"
+date-released: "2026-09-13"
+license: Apache-2.0
+repository-code: "https://github.com/Islam-Dj/MUIO-5.6-HiGHS"
+url: "https://github.com/Islam-Dj/MUIO-5.6-HiGHS"
+keywords:
+  - OSeMOSYS
+  - CLEWs
+  - MUIO
+  - HiGHS
+  - energy system modelling
+  - linear programming
+references:
+  - type: article
+    title: "Parallelizing the dual revised simplex method"
+    authors:
+      - family-names: "Huangfu"
+        given-names: "Q."
+      - family-names: "Hall"
+        given-names: "J. A. J."
+    journal: "Mathematical Programming Computation"
+    volume: 10
+    issue: 1
+    start: 119
+    end: 142
+    year: 2018
+    doi: "10.1007/s12532-017-0130-5"
+    notes: "The HiGHS solver used by this build."
+  - type: article
+    title: >-
+      OSeMOSYS: The Open Source Energy Modeling System. An introduction to its
+      ethos, structure and development
+    authors:
+      - family-names: "Howells"
+        given-names: "Mark"
+      - family-names: "Rogner"
+        given-names: "Holger"
+      - family-names: "Strachan"
+        given-names: "Neil"
+    journal: "Energy Policy"
+    volume: 39
+    issue: 10
+    start: 5850
+    end: 5870
+    year: 2011
+    doi: "10.1016/j.enpol.2011.06.033"
+    notes: "The energy system model that MUIO builds on."
+  - type: software
+    title: "MUIO - Modelling User Interface for OSeMOSYS"
+    repository-code: "https://github.com/OSeMOSYS/MUIO"
+    notes: "The application this build is based on."
