@@ -11,8 +11,8 @@ authors:
   - family-names: "DJEDAA"
     given-names: "Nour El Islam"
     affiliation: "CREAD - Centre de Recherche en Economie Appliquee pour le Developpement, Algeria"
-version: "5.6.1"
-date-released: "2026-09-13"
+version: "5.6.2"
+date-released: "2026-09-22"
 license: Apache-2.0
 repository-code: "https://github.com/Islam-Dj/MUIO-5.6-HiGHS"
 url: "https://github.com/Islam-Dj/MUIO-5.6-HiGHS"

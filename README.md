@@ -14,7 +14,7 @@ Everything is bundled: **no Python installation, no solver installation, no conf
 
 ## Download
 
-**[Download MUIO-5.6-HiGHS-Setup.exe](../../releases/latest)** (about 69 MB)
+**[Download MUIO-5.6-HiGHS-Setup.exe](../../releases/latest)** (about 72 MB)
 
 ### Requirements
 
