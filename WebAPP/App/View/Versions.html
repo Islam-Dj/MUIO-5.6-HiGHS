@@ -1,0 +1,258 @@
+<h3>MUIO ver.5.6.0, <small>20260331</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Fully implemented and tested indicator framework with user‑defined technology categorization and transparent, recorded indicator formulas (OSeMOSYS variables and parameters), enabling consistent cross‑scenario reporting.</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Implemented in‑interface display of concise explanations and definitions for OSeMOSYS variables, parameters, and sets within MUIO, improving user understanding and reducing ambiguity.</li>
+    <li><kbd style="font-weight: bold; background-color:#CB6FD7">Disp</kbd>&nbsp;Redesign of Case run page.</li>
+
+</ol>
+
+<h3>MUIO ver.5.5.0, <small>20260228</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;User toggled scenario checkbox selection — all scenarios set to: [checked/un-checked].</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Model cleanup mechanism improved to remove corrupted/invalid data and restore consistent analysis state.</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Persisted view definition during cleanup to maintain user‑defined visualization settings.</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Added on‑demand model file viewer in a modal window (syntax highlighting + lazy loading).</li>
+    <li><kbd style="font-weight: bold; background-color:#33cc33">Tech</kbd>&nbsp;Restructured Python solver runner for clearer stages (preprocess → LP → solve → postprocess) and stronger error handling.</li>
+    <li><kbd style="font-weight: bold; background-color:#33cc33">Tech</kbd>&nbsp;Unified cross‑platform solver handling: detects bundled GLPK/CBC (Win/macOS/Linux) and falls back to system solvers when needed.</li>
+    <li><kbd style="font-weight: bold; background-color:#33cc33">Tech</kbd>&nbsp;Improved backend logging: automatic creation of clean <code>app.log</code> for diagnostics.</li>
+    <li><kbd style="font-weight: bold; background-color:#ffcc00">Bug</kbd>&nbsp;Fixed the dynamic unit‑assignment script that resolves units based on Technology–Commodity rules, ensuring variables now receive correct units automatically.</li>
+        <li><kbd style="font-weight: bold; background-color:#33cc33">Tech</kbd>&nbsp;Electron startup guard: the app now waits for the backend server to be reachable before showing the UI (async fetch with 30× retries @ 500&nbsp;ms). 
+            <ul>
+                <li>Prevents “blank window / server not up yet” race;</li>
+                <li>Logs version line at startup;</li>
+                <li>Retry behavior configurable via environment (e.g., <code>MUIO_SERVER_URL</code>, <code>MUIO_SERVER_RETRIES</code>, <code>MUIO_SERVER_DELAY_MS</code>).</li>
+            </ul>
+    </li>
+</ol>
+
+<h3>MUIO ver.5.4.0, <small>20260131</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Default salvage value calculation has been changed from straight-line depreciation to sinking fund depreciation.</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;For new models, when creating a new case run, only the Base Scenario is preselected by default.</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Implemented the ability to delete results data while preserving the case run definition.</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Implemented automatic model cleanup after an unsuccessful run. ⚠️ Warning: Cleanup permanently deletes all results data.</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Upload size limit increased to 5 GB.</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Implemented preprocessing for the following parameters: 
+        <ul>
+            <li>Input To New Capacity Ratio</li>
+            <li>Input To Total Capacity Ratio</li>
+        </ul> Preprocessing applies only to relevant commodities and technologies.</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Model file updated to include revised constraints:
+        <ul>
+            <li>EBb4_EnergyBalanceEachYear4_ICR</li>
+            <li>INC1_InputToNewCapacity</li>
+            <li>ITC1_InputToTotalCapacity</li>
+        </ul>
+        Performance: These changes significantly reduce model size (lp.lp) and, consequently, the size of the result.txt file.
+    </li>
+</ol> 
+
+<h3>MUIO ver.5.3.0, <small>20250416 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;ViewData form export to xls - bug fixed</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Deletion of case runs - bug fixed</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Export grid to xls for params groups R, RT, RE - bug fixed</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Grid paging has been removed, dynamic height of the grid introduced. Excel like behaviour - improvements to table navigation and scrolling.</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Customized preferences implemented. User can set their preferred default decimal places in results view, and units for a specific model</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Update of the case run not longer necessary. User can generate data file and Run the model</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Filtering sets in confuguration page is enabled.</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Marginal/dual values (Shadow prices) added to the results. Values are undiscounted in postprocessing.
+        <ul><li>E8_AnnualEmissionsLimit [RYE]</li>
+        <li>EBb4_EnergyBalanceEachYear4 [RYC]</li>
+        <li>UDC1_UserDefinedConstraintInequality [RYCn]</li>
+        <li>UDC2_UserDefinedConstraintEquality [RYCn]</li>
+        </ul></li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Objective value added to the results</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Total storage capacity added to the results - postprocessing</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;CBC max characters of constrain name is 30. Following constraints are renamed:
+        <ul><li>SC1_LowerLimit_BeginningOfDailyTimeBracketOfFirstInstanceOfDayTypeInFirstWeekConstraint = SC1_LLBDFIFW</li>
+        <li>SC1_UpperLimit_BeginningOfDailyTimeBracketOfFirstInstanceOfDayTypeInFirstWeekConstraint = SC1_ULBDFIFW</li>
+        <li>SC2_LowerLimit_EndOfDailyTimeBracketOfLastInstanceOfDayTypeInFirstWeekConstraint = SC2_LLEDLIFW</li>
+        <li>SC2_UpperLimit_EndOfDailyTimeBracketOfLastInstanceOfDayTypeInFirstWeekConstraint = SC2_ULEDLIFW</li>
+        <li>SC3_LowerLimit_EndOfDailyTimeBracketOfLastInstanceOfDayTypeInLastWeekConstraint = SC3_LLEDLILW</li>
+        <li>SC3_UpperLimit_EndOfDailyTimeBracketOfLastInstanceOfDayTypeInLastWeekConstraint = SC3_ULEDLILW</li>
+        <li>SC4_LowerLimit_BeginningOfDailyTimeBracketOfFirstInstanceOfDayTypeInLastWeekConstraint = SC4_LLBDFILW</li>
+        <li>SC4_UpperLimit_BeginningOfDailyTimeBracketOfFirstInstanceOfDayTypeInLastWeekConstraint = SC4_ULBDFILW</li>
+        </ul></li>
+
+</ol> 
+
+<h3>MUIO ver.5.2.0, <small>20250215 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Integer validation for param group RT - bug fixed</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;kHA area unit added</li>
+</ol> 
+<h3>MUIO ver.5.1.0, <small>20250204 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Results data with technologies that belong to multiple tech groups - bug fixed</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;param Operational Life [R,T],  Operational Life Storage [R,S] validation of integer values has been added.</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Model file updated, equation S30 set StorageLevelYearStart[r,s,y] = 0</li>
+</ol> 
+
+<h3>MUIO ver.5.0.0, <small>20241217 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Import template includes storage data and structure</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Display units for variables with multiple sets - bug fixed</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Edit model name bug fixed</li>
+    <li><kbd style="font-weight: bold; background-color:#CB6FD7">Disp</kbd>&nbsp;New CLEWs demo model</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;PJ/yr and TJ/yr added as additional options under Capacity units</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Deletion of view def on update model bug fixed.</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Creating demand view bug fixed.</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Model file changed for TechnologyEmissionsPenalty calculation</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Generation of data file with season integer value - bug fixed</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Check if IAR or OAR exists in postprocessing</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Creation of views for the annualized investment cost variable fixed. Requires update of model configuration.</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Accessing recently created views bug fixed.</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;SETS deletions on configuration page bug fixed.</li>
+
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;PvAnnuity parameter is calculated using global discount rate</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Handling deleted SET in existing case runs</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Postprocessing fix for RateOfActivity and CapitalInvestment variables</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Implementation of dynamic year split</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Preprocessing for conversions implemented - param Conversionls{l in TIMESLICE, ls in SEASON};param Conversionld{l in TIMESLICE, ld in DAYTYPE};param Conversionlh{l in TIMESLICE, lh in DAILYTIMEBRACKET};</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Storage set implemented</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Storage paramteres included in generation of data file</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Check boxes for years fixed, only continuous selection is allowed</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Parameters definitions update</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Import xls process upgraded</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Import xls process bug fix - space in template name</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;New SETS, Storage, Seasons, DayTypes, DailyTimeBrackets, STORAGEINTRADAY, STORAGEINTRAYEAR</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Preprocessing for MODExTECHNOLOGYperSTORAGEto and MODExTECHNOLOGYperSTORAGEfrom implemented</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Storage added in MODEperTECHNOLOGY preprocessing</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;MODExTECHNOLOGYperEMISSIONChange implemented in preprocessing</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Variable AnnualEmissions removed</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Variable DiscountedTechnologyEmissionsPenalty removed</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Variable TechnologyEmissionsPenalty added</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Parameters ReserveMargin, ReserveMarginTagFuel, ReserveMarginTagTechnology removed</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;STORAGE perameters added
+    <ul><li>param DiscountRateStorage{r in REGION};</li>
+    <li>param OperationalLifeStorage{r in REGION, s in STORAGE};</li>
+    <li>param CapitalCostStorage{r in REGION, s in STORAGE, y in YEAR};</li>
+    <li>param ResidualStorageCapacity{r in REGION, s in STORAGE, y in YEAR};</li>
+    <li>param TechnologyToStorage{r in REGION, t in TECHNOLOGY, s in STORAGE, m in MODE_OF_OPERATION};</li>
+    <li>param TechnologyFromStorage{r in REGION, t in TECHNOLOGY, s in STORAGE, m in MODE_OF_OPERATION};</li>
+    </ul></li>
+</ol> 
+
+<h3>OSEMOSYS ver.4.9.0, <small>20240214 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Validation of input data by caserun - checking input data for inconsistencies that could create infeasibilities</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;param Discount Rate Idv [R,T] has been added.</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Single timeslice bug has been fixed-default values for year split are written to data file.</li>
+</ol> 
+
+<h3>OSEMOSYS ver.4.8.0, <small>20240125 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Batch run of cases (sequential execution) implemented</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;RES Final demand and no target technology node added</li>
+    <li><kbd style="font-weight: bold; background-color:#CB6FD7">Disp</kbd>&nbsp;Addjustemt for smaller screen resolution 1200px</li>
+</ol>
+
+<h3>OSEMOSYS ver.4.7.0, <small>20231102 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;New preprocessing and postprocessing scripts</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Report form has been improved serach option for variables, view handling for all variables</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Improved dynamic model diagram visualization</li>
+    <li><kbd style="font-weight: bold; background-color:#CB6FD7">Disp</kbd>&nbsp;New color scheme for pivot chart</li>
+</ol>
+
+<h3>OSEMOSYS ver.4.6.0, <small>20230801 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#c74219">Func</kbd>&nbsp;Default values are not written to data file</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Func</kbd>&nbsp;Import of excel template reads Discount rate</li>
+</ol>
+
+<h3>OSEMOSYS ver.4.5.0, <small>20230515 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#c74219">Func</kbd>&nbsp;Technical system requirements, upgraded pip packages, python 3.11</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Func</kbd>&nbsp;CBC solver upgraded to version 2.10. x64</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Message on optimality and feasibility from CBC</li>
+</ol>
+
+<h3>OSEMOSYS ver.4.4.0, <small>20230118 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Emission To Activity Change Ratio parameter added</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Emission By Activity Change variable added</li>
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Model file updated to produce results for new paramter and variable, it also incorporates the change to straight line depreciation</li>
+</ol>
+
+<h3>OSEMOSYS ver.4.3.0, <small>20230118 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Import facility implemented for model structure and data</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Import of legacy osemosys models throught xls template</li>
+</ol>
+
+<h3>OSEMOSYS ver.4.2.0, <small>20221030 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Scenario in case run bug fix</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Description of case runs bug fix</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Deletion of scenarios propagated through caseruns</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Deletion of used scenarios disabled with notification</li>
+</ol>
+
+<h3>OSEMOSYS ver.4.1.0, <small>20221030 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#c74219">Code</kbd>&nbsp;Jqx wigets updated to version 14.0.0</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;New scenario menagement in input forms </li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Descriptions of technologies, commodities and tech groups addet to pivot </li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;White spaces removed in tech, comm, emi, scenario names</li>
+</ol>
+
+<h3>OSEMOSYS ver.4.0.0, <small>20221030 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Preprocessing script included</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Performance of input forms and user expirience enhacement </li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Technology groups implemented </li>
+</ol>
+
+<h3>OSEMOSYS ver.3.3.0, <small>20220523 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Full backup archive, results included</li>
+</ol>
+
+<h3>OSEMOSYS ver.3.2.0, <small>20220516 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;CBC solver Cbc-2.7.5-win64-intel11.1</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Different default decimal places</li>
+</ol>
+
+<h3>OSEMOSYS ver.3.1.0, <small>20220425 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Pivot grid n3 n4 decimal places added</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Default view of pivot data by years </li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;two types of model diagram added</li>
+</ol>
+<h3>OSEMOSYS ver.3.0.0, <small>20220331 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Units field for pivot</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;RES viewer of input and outpu activity visualisation </li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Charts rendering of pivot view </li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;User defined view of pivot data saving </li>
+</ol>
+<h3>OSEMOSYS ver.2.1.0, <small>20220310 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Pvot grid for results analysis implemented</li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Json files encoding utf-8 bug fixed </li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Backup pnly necessary files </li>
+</ol>
+<h3>OSEMOSYS ver.2.0.0, <small>20220125 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Run case module added </li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Visualisation of csv files </li>
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Copy/paste values larger then 999 with comma separation is fixed </li>
+</ol>
+<h3>OSEMOSYS ver.1.2.0, <small>20211201 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Restore model size 1GB </li>
+</ol>
+<h3>OSEMOSYS ver.1.1.0, <small>20211201 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Drop down list navigation in RYT group parameters fixed </li>
+    <li><kbd style="font-weight: bold; background-color:#CB6FD7">Disp</kbd>&nbsp;Code versioning html page added</li>
+</ol>
+<h3>OSEMOSYS ver.1.0.0, <small>20211015 release</small></h3>
+<ol style="font-style: italic; font-weight: normal;">
+    <li><kbd style="font-weight: bold; background-color:#6FB3E0">Func</kbd>&nbsp;Initial OSEMOSYS UI release </li>
+</ol>

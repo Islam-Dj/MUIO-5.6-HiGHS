@@ -1,0 +1,3489 @@
+from pathlib import Path
+import pandas as pd
+import numpy as np
+import traceback
+import logging
+import json, shutil, os, time, subprocess
+from collections import defaultdict
+from itertools import product
+
+from werkzeug import Response
+
+logger = logging.getLogger(__name__)
+
+from Classes.Base import Config
+from Classes.Case.OsemosysClass import Osemosys
+from Classes.Base.FileClass import File
+from Classes.Case.HelpersClass import Helpers
+from Classes.Case.HighsSolverClass import HighsSolver
+from Classes.Case.MosoxClass import Mosox
+from Classes.Case import RunProgressClass as Progress
+from Classes.Case.SolutionConvertersClass import SolutionConverters
+
+from Classes.Base.CustomThreadClass import CustomThread
+class DataFile(Osemosys):
+    # def __init__(self, case):
+    #     Osemosys.__init__(self, case)
+
+    def gen_Conversions(self):
+        self.seasons = ''
+        for seId in self.seIDs:
+            self.seasons += '{} '.format(self.seMap[seId]) 
+
+        self.daytypes = ''
+        for dtId in self.dtIDs:
+            self.daytypes += '{} '.format(self.dtMap[dtId]) 
+
+        self.dailytimebrackets = ''
+        for dtbId in self.dtbIDs:
+            self.dailytimebrackets += '{} '.format(self.dtbMap[dtbId]) 
+
+        timeslices = self.genData["osy-ts"]
+        seasons = self.genData["osy-se"]
+        daytypes = self.genData["osy-dt"]
+        dailytypebrackets = self.genData["osy-dtb"]
+
+        seString = ''
+        dtString = ''
+        dtbString = ''
+        for ts in timeslices:           
+            seString += '{} '.format(ts['Ts'])
+            for se in seasons:
+                if se['SeId'] == ts['SE']:
+                    seString += '{} '.format(1)
+                else:
+                    seString += '{} '.format(0)
+
+            dtString += '{} '.format(ts['Ts'])
+            for dt in daytypes :
+                if dt['DtId'] == ts['DT']:
+                    dtString += '{} '.format(1)
+                else:
+                    dtString += '{} '.format(0)
+
+
+            dtbString += '{} '.format(ts['Ts'])
+            for dtb in dailytypebrackets :
+                if dtb['DtbId'] == ts['DTB']:
+                    dtbString += '{} '.format(1)
+                else:
+                    dtbString += '{} '.format(0)
+
+
+            seString += '{}'.format('\n')
+            dtString += '{}'.format('\n')
+            dtbString += '{}'.format('\n')
+
+        seString += '{}{}'.format(";",'\n')
+        dtString += '{}{}'.format(";",'\n')            
+        dtbString += '{}{}'.format(";",'\n')
+
+        self.f.write('{} {} {} {} {} {}'.format('param', 'Conversionls','default', 0, ':','\n'))
+        self.f.write('{}{}{}'.format(self.seasons, ':=', '\n'))
+        self.f.write('{}{}'.format(seString,'\n'))
+
+        self.f.write('{} {} {} {} {} {}'.format('param', 'Conversionld','default', 0, ':','\n'))
+        self.f.write('{}{}{}'.format(self.daytypes, ':=', '\n'))
+        self.f.write('{}{}'.format(dtString,'\n'))
+
+        self.f.write('{} {} {} {} {} {}'.format('param', 'Conversionlh','default', 0, ':','\n'))
+        self.f.write('{}{}{}'.format(self.dailytimebrackets, ':=', '\n'))
+        self.f.write('{}{}'.format(dtbString,'\n'))
+
+    def gen_R(self):
+        r = self.R(File.readFile(self.rPath))
+        for id, param in self.PARAM['R'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            for sc in self.scOrder:
+                if r[id][sc['ScId']]['value'] is not None and sc['Active'] == True:
+                    tmp = r[id][sc['ScId']]['value']
+            self.f.write('{} {} {}'.format('RE1', tmp, '\n'))
+            self.f.write('{} {}'.format(';', '\n'))
+
+    def gen_RCn(self):
+        rcn = self.RCn()
+        self.f.write('{} {} {} {} {} {}'.format('param', 'UDCTag','default', -1, ':','\n'))
+        self.f.write('{}{}{}'.format(self.cons, ':=', '\n'))
+        rcnString = ''
+        for conId in self.conIDs:
+            if rcn[conId] is not None:
+                tmp = rcn[conId]
+                rcnString += '{} '.format(tmp)
+        self.f.write('{}{}{}'.format('RE1 ', rcnString, '\n'))
+        self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RY(self):
+        ry = self.RY(File.readFile(self.ryPath))
+        for id, param in self.PARAM['RY'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':','\n'))
+            self.f.write('{}{}{}'.format(self.years, ':=', '\n'))
+            ryString = ''
+            for yearId in self.yearIDs:
+                for sc in self.scOrder:
+                    if ry[id][sc['ScId']][yearId] is not None and sc['Active'] == True:
+                        tmp = ry[id][sc['ScId']][yearId]
+                ryString += '{} '.format(tmp)
+            self.f.write('{}{}{}'.format('RE1 ', ryString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RT(self):
+        rt = self.RT(File.readFile(self.rtPath))
+        for id, param in self.PARAM['RT'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':','\n'))
+            self.f.write('{}{}{}'.format(self.techs, ':=', '\n'))
+            rtString = ''
+            for techId in self.techIDs:
+                for sc in self.scOrder:
+                    if rt[id][sc['ScId']][techId] is not None and sc['Active'] == True:
+                        tmp = rt[id][sc['ScId']][techId]
+                rtString += '{} '.format(tmp)
+            self.f.write('{}{}{}'.format('RE1 ', rtString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RE(self):
+        re = self.RE(File.readFile(self.rePath))
+        for id, param in self.PARAM['RE'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':','\n'))
+            self.f.write('{}{}{}'.format(self.emis, ':=', '\n'))
+            reString = ''
+            for emiId in self.emiIDs:
+                for sc in self.scOrder:
+                    if re[id][sc['ScId']][emiId] is not None and sc['Active'] == True:
+                        tmp = re[id][sc['ScId']][emiId]
+                reString += '{} '.format(tmp)
+            self.f.write('{}{}{}'.format('RE1 ', reString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RS(self):
+        re = self.RS(File.readFile(self.rsPath))
+        for id, param in self.PARAM['RS'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':','\n'))
+            self.f.write('{}{}{}'.format(self.stgs, ':=', '\n'))
+            rsString = ''
+            for stgId in self.stgIDs:
+                for sc in self.scOrder:
+                    if re[id][sc['ScId']][stgId] is not None and sc['Active'] == True:
+                        tmp = re[id][sc['ScId']][stgId]
+                rsString += '{} '.format(tmp)
+            self.f.write('{}{}{}'.format('RE1 ', rsString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RTSM(self):
+        rtsm = self.RTSM(File.readFile(self.rtsmPath))
+        for id, param in self.PARAM['RTSM'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            for stgId in self.stgIDs:
+                regionHeader = True
+                rytcString = ''
+                defaultValueFlag = False
+                for storageTechId in self.storageTechIDs[id][stgId]:
+         
+                    # self.f.write('{}{}'.format('[RE1,'+ self.techMap[activityTechId] + ','+ self.commMap[activityCommId] +',*,*]:', '\n'))
+                    # self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                    for mod in self.modIds:
+                        
+                        
+                        # for yearId in self.yearIDs:
+                        for sc in self.scOrder:
+                            rtsmValue = rtsm[id][sc['ScId']][stgId][storageTechId][mod]
+                            if rtsmValue is not None and sc['Active'] == True:
+                                if rtsmValue != self.defaultValue[id]:
+                                    defaultValueFlag = True
+                                tmp = rtsmValue
+                        rytcString += '{} '.format(tmp)
+                if defaultValueFlag:
+                    if regionHeader:
+                        regionHeader = False   
+                        self.f.write('{}{}'.format('[RE1,'+ self.techMap[storageTechId]  +',*,*]:', '\n'))
+                        self.f.write('{}{}{}'.format( self.mods, ':=', '\n'))
+                    self.f.write('{} {}{}'.format(self.stgMap[stgId], rytcString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYCn(self):
+        rycn = self.RYCn(File.readFile(self.rycnPath))
+        for id, param in self.PARAM['RYCn'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            self.f.write('{} {}'.format('[RE1,*,*]:', '\n'))
+            self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+            for conId in self.conIDs:
+                rycnString = ''
+                for yearId in self.yearIDs:
+                    for sc in self.scOrder:
+                        if rycn[id][sc['ScId']][yearId][conId] is not None and sc['Active'] == True:
+                            tmp = rycn[id][sc['ScId']][yearId][conId]
+                    rycnString += '{} '.format(tmp)
+                self.f.write('{} {}{}'.format(self.conMap[conId], rycnString, '\n'))
+        self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYTs(self):
+        ryts = self.RYTs(File.readFile(self.rytsPath))
+        for id, param in self.PARAM['RYTs'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':','\n'))
+            self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+            for timesliceId in self.timesliceIDs:
+                rytsString = ''
+                #defaultValueFlag = False
+                for yearId in self.yearIDs:
+                    for sc in self.scOrder:
+                        rytsValue = ryts[id][sc['ScId']][yearId][timesliceId]
+                        if rytsValue is not None and sc['Active'] == True:
+                            # if rytsValue != self.defaultValue[id]:
+                            #     defaultValueFlag = True
+                            tmp = rytsValue
+                    rytsString += '{} '.format(tmp)
+                #if defaultValueFlag:                        
+                self.f.write('{} {}{}'.format(self.tsMap[timesliceId], rytsString, '\n'))
+        self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYDtb(self):
+        rydtb = self.RYDtb(File.readFile(self.rydtbPath))
+        for id, param in self.PARAM['RYDtb'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':','\n'))
+            self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+            for dtbId in self.dtbIDs:
+                rydtbString = ''
+                #defaultValueFlag = False
+                for yearId in self.yearIDs:
+                    for sc in self.scOrder:
+                        rydtbValue = rydtb[id][sc['ScId']][yearId][dtbId]
+                        if rydtbValue is not None and sc['Active'] == True:
+                            # if rytsValue != self.defaultValue[id]:
+                            #     defaultValueFlag = True
+                            tmp = rydtbValue
+                    rydtbString += '{} '.format(tmp)
+                #if defaultValueFlag:                        
+                self.f.write('{} {}{}'.format(self.dtbMap[dtbId], rydtbString, '\n'))
+        self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYSeDt(self):
+        rysedt = self.RYSeDt(File.readFile(self.rysedtPath))
+        for id, param in self.PARAM['RYSeDt'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            for seId in self.seIDs:
+                regionHeader = True
+                # self.f.write('{} {}'.format('[RE1,'+ self.commMap[commId] +',*,*]:', '\n'))
+                # self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                for dtId in self.dtIDs:
+                    rysedtString = ''
+                    defaultValueFlag = False
+                    for yearId in self.yearIDs:
+                        for sc in self.scOrder:
+                            rysedtValue = rysedt[id][sc['ScId']][yearId][seId][dtId]
+                            if rysedtValue is not None and sc['Active'] == True:
+                                if rysedtValue != self.defaultValue[id]:
+                                    defaultValueFlag = True
+                                tmp = rysedtValue
+                        rysedtString += '{} '.format(tmp)
+                    if defaultValueFlag:
+                        if regionHeader:
+                            regionHeader = False   
+                            # self.f.write('{} {}'.format('[RE1,'+ self.seMap[seId] +',*,*]:', '\n'))
+                            self.f.write('{} {}'.format('['+ str(self.seMap[seId]) +',*,*]:', '\n'))
+                            self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                        self.f.write('{} {}{}'.format(self.dtMap[dtId], rysedtString, '\n'))
+        self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYT(self):
+        ryt = self.RYT(File.readFile(self.rytPath))
+
+        for id, param in self.PARAM['RYT'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            regionHeader = True
+            for techId in self.techIDs:
+                rytString = ''
+                defaultValueFlag = False
+                for yearId in self.yearIDs:
+                    for sc in self.scOrder:
+                        rytValue = ryt[id][sc['ScId']][yearId][techId]
+                        if rytValue is not None and sc['Active'] == True:
+                            if rytValue != self.defaultValue[id]:
+                                defaultValueFlag = True
+                            tmp = rytValue
+                    #if defaultValueFlag:
+                    rytString += '{} '.format(tmp)
+                if defaultValueFlag:
+                    if regionHeader:
+                        regionHeader = False   
+                        self.f.write('{} {}'.format('[RE1,*,*]:', '\n'))
+                        self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                    self.f.write('{} {}{}'.format(self.techMap[techId], rytString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYS(self):
+        rys = self.RYS(File.readFile(self.rysPath))
+
+        for id, param in self.PARAM['RYS'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            regionHeader = True
+            for stgId in self.stgIDs:
+                rysString = ''
+                defaultValueFlag = False
+                for yearId in self.yearIDs:
+                    for sc in self.scOrder:
+                        rysValue = rys[id][sc['ScId']][yearId][stgId]
+                        if rysValue is not None and sc['Active'] == True:
+                            if rysValue != self.defaultValue[id]:
+                                defaultValueFlag = True
+                            tmp = rysValue
+                    #if defaultValueFlag:
+                    rysString += '{} '.format(tmp)
+                if defaultValueFlag:
+                    if regionHeader:
+                        regionHeader = False   
+                        self.f.write('{} {}'.format('[RE1,*,*]:', '\n'))
+                        self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                    self.f.write('{} {}{}'.format(self.stgMap[stgId], rysString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYTCn(self):
+        rytcn = self.RYTCn(File.readFile(self.rytcnPath))
+        for id, param in self.PARAM['RYTCn'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            for conId in self.conIDs:
+                
+                if self.keys_exists(self.constraintTechIDs, id, conId):
+                    for constraintTechId in self.constraintTechIDs[id][conId]:
+                        regionHeader = True
+                        defaultValueFlag = False
+                        # self.f.write('{}{}'.format('[RE1,'+ self.techMap[constraintTechId] +',*,*]:', '\n'))
+                        # self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                        rytcnString = ''
+                        for yearId in self.yearIDs:
+                            for sc in self.scOrder:
+                                rytcnValue = rytcn[id][sc['ScId']][yearId][constraintTechId][conId]
+                                if rytcnValue is not None and sc['Active'] == True:
+                                    if rytcnValue != self.defaultValue[id]:
+                                        defaultValueFlag = True
+                                    tmp = rytcnValue
+                            rytcnString += '{} '.format(tmp)
+                        if defaultValueFlag:
+                            if regionHeader:
+                                regionHeader = False   
+                                self.f.write('{}{}'.format('[RE1,'+ self.techMap[constraintTechId] +',*,*]:', '\n'))
+                                self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                            self.f.write('{} {}{}'.format(self.conMap[conId], rytcnString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYTM(self):
+        rytm = self.RYTM(File.readFile(self.rytmPath))
+        for id, param in self.PARAM['RYTM'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            
+            for techId in self.techIDs:
+                regionHeader = True
+                # self.f.write('{} {}'.format('[RE1,'+ self.techMap[techId] +',*,*]:', '\n'))
+                # self.f.write('{}{}{}'.format(self.years, ':=', '\n'))
+                for mod in self.modIds:
+                    rytmString = ''
+                    defaultValueFlag = False
+                    for yearId in self.yearIDs:
+                        for sc in self.scOrder:
+                            rytmValue = rytm[id][sc['ScId']][yearId][techId][mod]
+                            if rytmValue is not None and sc['Active'] == True:
+                                if rytmValue != self.defaultValue[id]:
+                                    defaultValueFlag = True
+                                tmp = rytmValue
+                        rytmString += '{} '.format(tmp)
+                    if defaultValueFlag:
+                        if regionHeader:
+                            regionHeader = False   
+                            self.f.write('{} {}'.format('[RE1,'+ self.techMap[techId] +',*,*]:', '\n'))
+                            self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                        self.f.write('{} {}{}'.format(mod, rytmString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYC(self):
+        ryc = self.RYC(File.readFile(self.rycPath))
+        for id, param in self.PARAM['RYC'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            # self.f.write('{} {}'.format('[RE1,*,*]:', '\n'))
+            # self.f.write('{}{}{}'.format(self.years, ':=', '\n'))
+            regionHeader = True
+            for commId in self.commIDs:
+                rycString = ''
+                defaultValueFlag = False
+                for yearId in self.yearIDs:
+                    for sc in self.scOrder:
+                        rycValue = ryc[id][sc['ScId']][yearId][commId]
+                        if rycValue is not None and sc['Active'] == True:
+                            if rycValue != self.defaultValue[id]:
+                                defaultValueFlag = True
+                            tmp = rycValue
+                    rycString += '{} '.format(tmp)
+                if defaultValueFlag:
+                    if regionHeader:
+                        regionHeader = False   
+                        self.f.write('{} {}'.format('[RE1,*,*]:', '\n'))
+                        self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                    self.f.write('{} {}{}'.format(self.commMap[commId], rycString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYE(self):
+        rye = self.RYE(File.readFile(self.ryePath))
+        for id, param in self.PARAM['RYE'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            regionHeader = True
+            # self.f.write('{} {}'.format('[RE1,*,*]:', '\n'))
+            # self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+            for emiId in self.emiIDs:
+                ryeString = ''
+                defaultValueFlag = False
+                for yearId in self.yearIDs:
+                    for sc in self.scOrder:
+                        ryeValue = rye[id][sc['ScId']][yearId][emiId]
+                        if ryeValue is not None and sc['Active'] == True:
+                            if ryeValue != self.defaultValue[id]:
+                                defaultValueFlag = True
+                            tmp = ryeValue
+                    ryeString += '{} '.format(tmp)
+                if defaultValueFlag:
+                    if regionHeader:
+                        regionHeader = False   
+                        self.f.write('{} {}'.format('[RE1,*,*]:', '\n'))
+                        self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                    self.f.write('{} {}{}'.format(self.emiMap[emiId], ryeString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYTC(self):
+        rytc = self.RYTC(File.readFile(self.rytcPath))
+        for id, param in self.PARAM['RYTC'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            for inputCapTechId in self.inputCapTechIds[id]:
+                regionHeader = True
+                for inputCapCommId in self.inputCapCommIds[id][inputCapTechId]:
+                    rytcString = ''
+                    defaultValueFlag = False
+                    for yearId in self.yearIDs:
+                        for sc in self.scOrder:
+                            rytcValue = rytc[id][sc['ScId']][yearId][inputCapTechId][inputCapCommId]
+                            if rytcValue is not None and sc['Active'] == True:
+                                if rytcValue != self.defaultValue[id]:
+                                    defaultValueFlag = True
+                                tmp = rytcValue
+                        rytcString += '{} '.format(tmp)
+                    if defaultValueFlag:
+                        if regionHeader:
+                            regionHeader = False   
+                            self.f.write('{}{}'.format('[RE1,'+ self.techMap[inputCapTechId] + ',*,*]:', '\n'))
+                            self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                        self.f.write('{} {}{}'.format(self.commMap[inputCapCommId], rytcString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYTCM(self):
+        rytcm = self.RYTCM(File.readFile(self.rytcmPath))
+        for id, param in self.PARAM['RYTCM'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            for activityTechId in self.activityTechIDs[id]:
+                for activityCommId in self.activityCommIDs[id][activityTechId]:
+                    regionHeader = True
+                    # self.f.write('{}{}'.format('[RE1,'+ self.techMap[activityTechId] + ','+ self.commMap[activityCommId] +',*,*]:', '\n'))
+                    # self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                    for mod in self.modIds:
+                        rytcString = ''
+                        defaultValueFlag = False
+                        for yearId in self.yearIDs:
+                            for sc in self.scOrder:
+                                rytcmValue = rytcm[id][sc['ScId']][yearId][activityTechId][activityCommId][mod]
+                                if rytcmValue is not None and sc['Active'] == True:
+                                    if rytcmValue != self.defaultValue[id]:
+                                        defaultValueFlag = True
+                                    tmp = rytcmValue
+                            rytcString += '{} '.format(tmp)
+                        if defaultValueFlag:
+                            if regionHeader:
+                                regionHeader = False   
+                                self.f.write('{}{}'.format('[RE1,'+ self.techMap[activityTechId] + ','+ self.commMap[activityCommId] +',*,*]:', '\n'))
+                                self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                            self.f.write('{} {}{}'.format(mod, rytcString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYTSM(self):
+        rytsm = self.RYTSM(File.readFile(self.rytsmPath))
+        for id, param in self.PARAM['RYTSM'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            for stgId in self.stgIDs:
+                
+                for storageTechId in self.storageTechIDs[id][stgId]:
+                    regionHeader = True
+                    # self.f.write('{}{}'.format('[RE1,'+ self.techMap[activityTechId] + ','+ self.commMap[activityCommId] +',*,*]:', '\n'))
+                    # self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                    for mod in self.modIds:
+                        rytcString = ''
+                        defaultValueFlag = False
+                        for yearId in self.yearIDs:
+                            for sc in self.scOrder:
+                                rytsmValue = rytsm[id][sc['ScId']][yearId][stgId][storageTechId][mod]
+                                if rytsmValue is not None and sc['Active'] == True:
+                                    if rytsmValue != self.defaultValue[id]:
+                                        defaultValueFlag = True
+                                    tmp = rytsmValue
+                            rytcString += '{} '.format(tmp)
+                        if defaultValueFlag:
+                            if regionHeader:
+                                regionHeader = False   
+                                self.f.write('{}{}'.format('[RE1,'+ self.stgMap[stgId] + ','+ self.techMap[storageTechId] +',*,*]:', '\n'))
+                                self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                            self.f.write('{} {}{}'.format(mod, rytcString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYTE(self):
+        ryte = self.RYTE(File.readFile(self.rytePath))
+        for id, param in self.PARAM['RYTE'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            for emissionTechId in self.emissionTechIDs[id]:
+                regionHeader = True
+                for activityEmissionId in self.activityEmissionIDs[id][emissionTechId]:
+                    defaultValueFlag = False
+                    ryteString = ''
+                    for yearId in self.yearIDs:
+                        for sc in self.scOrder:
+                            ryteValue = ryte[id][sc['ScId']][yearId][emissionTechId][activityEmissionId]
+                            if ryteValue is not None and sc['Active'] == True:
+                                if ryteValue != self.defaultValue[id]:
+                                    defaultValueFlag = True
+                                tmp = ryteValue
+                        ryteString += '{} '.format(tmp)
+                    if defaultValueFlag:
+                        if regionHeader:
+                            regionHeader = False   
+                            self.f.write('{}{}'.format('[RE1,'+ self.techMap[emissionTechId] +  ','+ self.emiMap[activityEmissionId] + ',*,*]:', '\n'))
+                            self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                        self.f.write('{} {}{}'.format(1, ryteString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYTEM(self):
+        rytem = self.RYTEM(File.readFile(self.rytemPath))
+        for id, param in self.PARAM['RYTEM'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            for emissionTechId in self.emissionTechIDs[id]:
+                for activityEmissionId in self.activityEmissionIDs[id][emissionTechId]:
+                    regionHeader = True
+                    # self.f.write('{}{}'.format('[RE1,'+ self.techMap[emissionTechId] +  ','+ self.emiMap[activityEmissionId] + ',*,*]:', '\n'))
+                    # self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                    for mod in self.modIds:
+                        ryteString = ''
+                        defaultValueFlag = False
+                        for yearId in self.yearIDs:
+                            for sc in self.scOrder:
+                                rytemValue = rytem[id][sc['ScId']][yearId][emissionTechId][activityEmissionId][mod]
+                                if rytemValue is not None and sc['Active'] == True:
+                                    if rytemValue != self.defaultValue[id]:
+                                        defaultValueFlag = True
+                                    tmp = rytemValue
+                            ryteString += '{} '.format(tmp)
+                        if defaultValueFlag:
+                            if regionHeader:
+                                regionHeader = False   
+                                self.f.write('{}{}'.format('[RE1,'+ self.techMap[emissionTechId] +  ','+ self.emiMap[activityEmissionId] + ',*,*]:', '\n'))
+                                self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                            self.f.write('{} {}{}'.format(mod, ryteString, '\n'))
+            self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYTTs(self):
+        rytts = self.RYTTs(File.readFile(self.ryttsPath))
+        for id, param in self.PARAM['RYTTs'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            for techId in self.techIDs:
+                regionHeader = True
+                # self.f.write('{} {}'.format('[RE1,'+ self.techMap[techId] +',*,*]:', '\n'))
+                # self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                for timesliceId in self.timesliceIDs:
+                    ryttsString = ''
+                    defaultValueFlag = False
+                    for yearId in self.yearIDs:
+                        for sc in self.scOrder:
+                            ryttsValue =  rytts[id][sc['ScId']][yearId][techId][timesliceId]
+                            if ryttsValue is not None and sc['Active'] == True:
+                                if ryttsValue != self.defaultValue[id]:
+                                    defaultValueFlag = True
+                                tmp = ryttsValue
+                        ryttsString += '{} '.format(tmp)
+                    if defaultValueFlag:
+                        if regionHeader:
+                            regionHeader = False   
+                            self.f.write('{} {}'.format('[RE1,'+ self.techMap[techId] +',*,*]:', '\n'))
+                            self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                        self.f.write('{} {}{}'.format(self.tsMap[timesliceId], ryttsString, '\n'))
+        self.f.write('{}{}'.format(';', '\n'))
+
+    def gen_RYCTs(self):
+        rycts = self.RYCTs(File.readFile(self.ryctsPath))
+        for id, param in self.PARAM['RYCTs'].items():
+            self.f.write('{} {} {} {} {} {}'.format('param', param,'default', self.defaultValue[id], ':=','\n'))
+            for commId in self.commIDs:
+                regionHeader = True
+                # self.f.write('{} {}'.format('[RE1,'+ self.commMap[commId] +',*,*]:', '\n'))
+                # self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                for timesliceId in self.timesliceIDs:
+                    ryctsString = ''
+                    defaultValueFlag = False
+                    for yearId in self.yearIDs:
+                        for sc in self.scOrder:
+                            ryctsValue = rycts[id][sc['ScId']][yearId][commId][timesliceId]
+                            if ryctsValue is not None and sc['Active'] == True:
+                                if ryctsValue != self.defaultValue[id]:
+                                    defaultValueFlag = True
+                                tmp = ryctsValue
+                        ryctsString += '{} '.format(tmp)
+                    if defaultValueFlag:
+                        if regionHeader:
+                            regionHeader = False   
+                            self.f.write('{} {}'.format('[RE1,'+ self.commMap[commId] +',*,*]:', '\n'))
+                            self.f.write('{}{}{}'.format( self.years, ':=', '\n'))
+                        self.f.write('{} {}{}'.format(self.tsMap[timesliceId], ryctsString, '\n'))
+        self.f.write('{}{}'.format(';', '\n'))
+
+    def generateDatafile( self, caserunname ):
+        try:
+            self.defaultValue = self.getParamDefaultValues()
+            self.emiIDs = self.getEmiIds()
+            self.stgIDs = self.getStgIds()
+            self.techIDs = self.getTechIds()
+            self.commIDs = self.getCommIds()
+            self.conIDs = self.getConIds()
+            self.scOrder = self.getScOrder(caserunname)
+
+            self.emiMap = self.getEmisMap()
+            self.techMap = self.getTechsMap()
+            self.tsMap = self.getTsMap()
+            self.commMap = self.getCommsMap()
+            self.conMap = self.getConsMap()
+            self.stgMap = self.getStgMap()
+            self.StgByType = self.getStgByType()
+
+            self.seIDs = self.getSeIds()
+            self.seMap = self.getSeMap()
+            self.dtIDs = self.getDtIds()
+            self.dtMap = self.getDtMap()
+            self.dtbIDs = self.getDtbIds()
+            self.dtbMap = self.getDtbMap()
+            
+            self.yearIDs = self.getYears()
+            # self.timesliceIDs = self.getTimeslices()
+            self.timesliceIDs = self.getTsIds()
+            self.modIds = self.getMods()
+
+            self.activityTechIDs = self.getActivityTechIds()
+            self.activityCommIDs = self.getActivityCommIds()
+
+            self.storageTechIDs = self.getStorageTechIds()
+
+            self.inputCapTechIds = self.getInputCapTechIds()
+            self.inputCapCommIds = self.getInputCapCommIds()
+
+            self.emissionTechIDs = self.getActivityEmissionTechIds()
+            self.activityEmissionIDs = self.getActivityEmisionIds()
+
+            self.constraintTechIDs = self.getConstraintTechIds()
+
+            self.stgs = ''
+            for stgId in self.stgIDs:
+                self.stgs += '{} '.format(self.stgMap[stgId]) 
+
+            self.yearlyStgs = ''
+            self.dailyStgs = ''
+            for stgType, sbt in self.StgByType.items():
+                if stgType == 'Yearly':
+                    for s in sbt:
+                        self.yearlyStgs += '{} '.format(s) 
+                else:
+                    for s in sbt:
+                        self.dailyStgs += '{} '.format(s)      
+
+            self.techs = ''
+            for techId in self.techIDs:
+                self.techs += '{} '.format(self.techMap[techId]) 
+
+            self.comms = ''
+            for commId in self.commIDs:
+                self.comms += '{} '.format(self.commMap[commId]) 
+
+            self.emis = ''
+            for emiId in self.emiIDs:
+                self.emis += '{} '.format(self.emiMap[emiId])
+
+            self.years = ''
+            for yearId in self.yearIDs:
+               self.years += '{} '.format(yearId)
+
+            self.timeslices = ''
+            for timesliceId in self.timesliceIDs:
+                self.timeslices += '{} '.format(self.tsMap[timesliceId])
+
+            self.seasons = ''
+            for seId in self.seIDs:
+                self.seasons += '{} '.format(self.seMap[seId]) 
+
+            self.daytypes = ''
+            for dtId in self.dtIDs:
+                self.daytypes += '{} '.format(self.dtMap[dtId]) 
+
+            self.dailytimebrackets = ''
+            for dtbId in self.dtbIDs:
+                self.dailytimebrackets += '{} '.format(self.dtbMap[dtbId]) 
+
+            self.mods = ''
+            for modId in self.modIds:
+                self.mods += '{} '.format(modId)
+
+            self.cons = ''
+            for conId in self.conIDs:
+                self.cons += '{} '.format(self.conMap[conId])
+
+            # path = '"{}"'.format(self.resPath.resolve())
+            self.resPath = Path('..', '..', '..', '..', 'WebAPP', 'DataStorage', self.case, 'res',caserunname, 'csv')
+            path = '"{}"'.format(self.resPath)
+
+            dataFilePath = Path(Config.DATA_STORAGE, self.case, 'res',caserunname,'data.txt')
+
+
+            # self.f = open(self.dataFile, mode="w", encoding='utf-8')
+            #self.f = open(dataFilePath, mode="w", encoding='utf-8')
+
+            with open(dataFilePath, "w", encoding="utf-8") as self.f:
+                #f.write(json.dumps(data, ensure_ascii=False,  indent=4, sort_keys=False))
+                self.f.write('####################\n#Sets#\n####################\n')
+                self.f.write('{} {}'.format('#', '\n'))
+               
+                self.f.write('{} {} {} {}{}{}'.format('set', 'REGION',':=', 'RE1', ';', '\n'))
+                self.f.write('{} {} {} {}{}{}'.format('set', 'TECHNOLOGY',':=', self.techs, ';', '\n'))
+                self.f.write('{} {} {} {}{}{}'.format('set', 'COMMODITY',':=', self.comms, ';', '\n'))
+                self.f.write('{} {} {} {}{}{}'.format('set', 'EMISSION',':=', self.emis, ';', '\n'))
+                self.f.write('{} {} {} {}{}{}'.format('set', 'STORAGE',':=',self.stgs, ';', '\n'))
+                self.f.write('{} {} {} {}{}{}'.format('set', 'YEAR',':=', self.years, ';', '\n'))
+                self.f.write('{} {} {} {}{}{}'.format('set', 'SEASON',':=', self.seasons, ';', '\n'))
+                self.f.write('{} {} {} {}{}{}'.format('set', 'DAYTYPE',':=', self.daytypes, ';', '\n'))
+                self.f.write('{} {} {} {}{}{}'.format('set', 'DAILYTIMEBRACKET',':=', self.dailytimebrackets, ';', '\n'))
+                self.f.write('{} {} {} {}{}{}'.format('set', 'TIMESLICE',':=', self.timeslices, ';', '\n'))
+                self.f.write('{} {} {} {}{}{}'.format('set', 'MODE_OF_OPERATION',':=', self.mods, ';', '\n'))
+                self.f.write('{} {} {} {}{}{}'.format('set', 'STORAGEINTRADAY',':=', self.dailyStgs, ';', '\n'))
+                self.f.write('{} {} {} {}{}{}'.format('set', 'STORAGEINTRAYEAR',':=', self.yearlyStgs, ';', '\n'))
+                self.f.write('{} {} {} {}{}{}'.format('set', 'UDC',':=', self.cons, ';', '\n'))
+                self.f.write('####################\n#Parameters#\n####################\n')
+
+                #path
+                # self.f.write('{}{}'.format('#', '\n'))
+                # self.f.write('{} {} {} {} {} {}'.format('param', 'ResultsPath',':=', path, ';', '\n'))
+                # self.f.write('{}{}'.format('', '\n'))
+                
+                #trade route hard code
+                self.f.write('{} {} {} {} {} {}'.format('param', 'TradeRoute ','default', '0', ':=','\n'))
+                self.f.write('{} {}'.format(';', '\n'))
+                self.f.write('{} {}'.format('', '\n'))
+
+                #hard code to test 
+                # self.f.write('{} {} {} {} {} {}'.format('param', 'DaysInDayType ','default', '0', ':=','\n'))
+                # self.f.write('{} {}'.format(';', '\n'))
+                # self.f.write('{} {}'.format('', '\n'))
+
+                self.gen_Conversions()
+                self.gen_RCn()
+                #dznamicaly call function depending on defined params
+                for group, array in self.PARAM.items():
+                    if array:
+                        func_name = Config.GEN_F[group]
+                        func = getattr(self,func_name) 
+                        func() 
+
+                self.f.write('{}{}'.format('#', '\n'))
+                self.f.write('{}'.format('end;'))
+            # self.f.close
+            # if not os.path.exists(Path(Config.DATA_STORAGE,self.case,'res', 'csv')):
+            #     resName = Path(Config.DATA_STORAGE,self.case,'res', 'csv')
+            #     os.makedirs(resName, mode=0o777, exist_ok=False)
+
+                #os.makedirs(name,0777)
+
+        #ovako prosljedjujemo exception u prethodnom slucaju vracamo response u funkciju koja poziva writeFile
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+
+    def createCaseRun(self, caserunname, data):
+        try:
+            caseRunPath = Path(Config.DATA_STORAGE,self.case,'res', caserunname)
+            csvPath = Path(Config.DATA_STORAGE,self.case,'res', caserunname, 'csv')
+            #resData = Path(Config.DATA_STORAGE,self.case,'view', 'resData.json')
+
+            if not os.path.exists(caseRunPath):
+                os.makedirs(caseRunPath)
+                os.makedirs(csvPath)
+                if not os.path.exists(self.resDataPath):
+                    File.writeFile( data, self.resDataPath)
+                else:
+                    # resData smo vec ucitali u data varijablu u CaseControlleru pa nema potrebe ponovo citati iz filea
+                    #resData = File.readFile(self.resData)
+                    self.resData['osy-cases'].append(data)
+                    File.writeFile( self.resData, self.resDataPath)
+                response = {
+                    "message": "You have created a case run!",
+                    "status_code": "success"
+                } 
+            else:
+                response = {
+                    "message": "Case with same name already exists!",
+                    "status_code": "exist"
+                } 
+
+            return response
+            # urllib.request.urlretrieve(self.dataFile, dataFile)
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+
+    def deleteScenarioCaseRuns(self, scenarioId):
+        try:
+            #resData = File.readFile(self.resDataPath)
+            cases = self.resData['osy-cases']
+
+            for cs in cases:
+                for sc in cs['Scenarios']:
+                    if sc['ScenarioId'] == scenarioId:
+                        cs['Scenarios'].remove(sc)
+
+
+            File.writeFile(self.resData, self.resDataPath   )
+            response = {
+                "message": "You have deleted scenario from caseruns!",
+                "status_code": "success"
+            } 
+
+
+            return response
+            # urllib.request.urlretrieve(self.dataFile, dataFile)
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+
+    def updateCaseRun(self, caserunname, oldcaserunname, data):
+        try:
+            caseRunPath = Path(Config.DATA_STORAGE,self.case,'res', oldcaserunname)
+            newcaseRunPath = Path(Config.DATA_STORAGE,self.case,'res', caserunname)
+            csvPath = Path(Config.DATA_STORAGE,self.case,'res', caserunname, 'csv')
+            #self.resData = Path(Config.DATA_STORAGE,self.case,'view', 'resData.json')
+
+            if not os.path.exists(newcaseRunPath):
+                os.rename(caseRunPath, newcaseRunPath)
+
+                if not os.path.exists(csvPath):
+                    os.makedirs(csvPath)
+
+                #resData = File.readFile(self.resData)
+
+                resdata = self.resData['osy-cases']
+                for i, case in enumerate(resdata):
+                    if case['Case'] == oldcaserunname:
+                        self.resData['osy-cases'][i] = data
+
+                File.writeFile( self.resData, self.resDataPath)
+                response = {
+                    "message": "You have updated a case run!",
+                    "status_code": "success"
+                } 
+            elif os.path.exists(newcaseRunPath) and caserunname==oldcaserunname:
+                if not os.path.exists(csvPath):
+                    os.makedirs(csvPath)
+
+                #resData = File.readFile(self.resData)
+
+                resdata = self.resData['osy-cases']
+                for i, case in enumerate(resdata):
+                    if case['Case'] == oldcaserunname:
+                        self.resData['osy-cases'][i] = data
+
+                File.writeFile( self.resData, self.resDataPath)
+                response = {
+                    "message": "You have updated a case run!",
+                    "status_code": "success"
+                } 
+            else:
+                response = {
+                    "message": "Case with same name already exists!",
+                    "status_code": "exist"
+                } 
+
+            return response
+            # urllib.request.urlretrieve(self.dataFile, dataFile)
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+
+    def deleteCaseResultsJSON(self, caserunname):
+        try:
+            csvPath = Path(self.resultsPath, caserunname, "csv")
+            if os.path.exists(csvPath):
+                shutil.rmtree(csvPath)
+
+            merged = Helpers.merge_groups(self.VARIABLES, self.IND_GROUPED)
+
+
+            for group, array in merged.items():
+                #if group != 'RYS':
+                path = Path(self.viewFolderPath, group+'.json')
+                if path.is_file():
+                    jsonFile = File.readFile(path)
+                    for obj in array:
+                        #potrebna provjera jer smo u 4.5 verziji dodali varijablu EBAC i dolazilo je do greske jer nije bilo u reyultataima
+                        if obj['id'] in jsonFile:
+                            if caserunname in jsonFile[obj['id']]:
+                                del jsonFile[obj['id']][caserunname]
+                    File.writeFile(jsonFile, path)
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+        
+    def deleteCaseRun(self, caserunname, resultsOnly):
+        try:
+            #caseRunPath = Path(Config.DATA_STORAGE,self.case,'res', caserunname)
+            #self.resData = Path(Config.DATA_STORAGE,self.case,'view', 'resData.json')
+
+            ################## RES folder
+            casePath = Path(self.resultsPath, caserunname)
+            if not resultsOnly:
+                shutil.rmtree(casePath)
+            else:
+                for item in os.listdir(casePath):
+                    item_path = os.path.join(casePath, item)
+                    if os.path.isfile(item_path) or os.path.islink(item_path):
+                        os.remove(item_path)  # delete file
+                    elif os.path.isdir(item_path):
+                        if not resultsOnly:
+                            shutil.rmtree(item_path)  # delete subfolder
+                        else:
+                            # remove all contents inside the folder but keep the folder itself
+                            for root, dirs, files in os.walk(item_path):
+                                # delete files
+                                for f in files:
+                                    os.remove(os.path.join(root, f))
+                                # delete sub-directories
+                                for d in dirs:
+                                    shutil.rmtree(os.path.join(root, d))
+
+            ##############################
+
+
+            ##################VIEW folder
+            #  update resData.json folder
+            if not resultsOnly:
+                #resData = File.readFile(self.resData)
+                for obj in self.resData['osy-cases']:
+                    if obj['Case'] == caserunname:
+                        self.resData['osy-cases'].remove(obj)
+                File.writeFile( self.resData, self.resDataPath )
+
+            # - update .json files by removing caserun
+            merged = Helpers.merge_groups(self.VARIABLES, self.IND_GROUPED)
+            for group, array in merged.items():
+                #if group != 'RYS':
+                path = Path(self.viewFolderPath, group+'.json')
+                if path.is_file():
+                    jsonFile = File.readFile(path)
+                    for obj in array:
+                        if obj['id'] in jsonFile:
+                            if caserunname in jsonFile[obj['id']]:
+                                del jsonFile[obj['id']][caserunname]
+                    File.writeFile(jsonFile, path)
+                    
+            response = {
+                "message": "You have deleted a case run!",
+                "status_code": "success"
+            } 
+
+            return response
+            # urllib.request.urlretrieve(self.dataFile, dataFile)
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+
+    def cleanUp(self):
+        try:
+
+            #delete from view folder
+            # moramo izbrisati res i view folder ostaviti samo resData.json i viewDefinitions.json
+
+            # self.resultsPath = Path(Config.DATA_STORAGE,case,'res')
+            # self.viewFolderPath = Path(Config.DATA_STORAGE,case,'view')
+            # folder_path = "C:/putanja/do/foldera"
+
+            if os.path.exists(self.resultsPath) and os.path.isdir(self.resultsPath):
+                if os.listdir(self.resultsPath):   # returns list of files/folders
+                    for caserunname in os.listdir( self.resultsPath):
+                        caserunname_path = os.path.join(self.resultsPath, caserunname)
+                        for carerunData in os.listdir( caserunname_path):
+                            file_path = os.path.join(caserunname_path, carerunData)
+                            try:
+                                if os.path.isfile(file_path) or os.path.islink(file_path):
+                                    os.remove(file_path)
+                                elif os.path.isdir(file_path):
+                                    shutil.rmtree(file_path)
+                            except Exception as e:
+                                print(f"Greška pri brisanju {file_path}: {e}")
+
+            if os.path.exists(self.viewFolderPath) and os.path.isdir(self.viewFolderPath):
+                if os.listdir(self.viewFolderPath):   # returns list of files/folders
+                    for filename in os.listdir( self.viewFolderPath):
+                        if filename !='resData.json' and filename != 'viewDefinitions.json':
+                            file_path = os.path.join(self.viewFolderPath, filename)
+                            try:
+                                if os.path.isfile(file_path) or os.path.islink(file_path):
+                                    os.remove(file_path)
+                                elif os.path.isdir(file_path):
+                                    shutil.rmtree(file_path)
+                            except Exception as e:
+                                print(f"Greška pri brisanju {file_path}: {e}")
+
+            #sad moramo napraviti defualt definitions file - ovo smo napustili 18022026 zelimo da ostanu definicije view-ova
+            ##viewDefPath = Path(self.viewFolderPath, 'viewDefinitions.json')
+            # configPath = Path(Config.DATA_STORAGE, 'Variables.json')
+            # vars = File.readParamFile(configPath)
+            # viewDef = {}
+            # for group, lists in vars.items():
+            #     for list in lists:
+            #         viewDef[list['id']] = []
+
+            # viewData = {
+            #         "osy-views": viewDef
+            #     }
+            # File.writeFile( viewData, viewDefPath)
+
+            ######### treba provjeriti da li res fodler ima subfolde sa imenom case is resData.json
+
+            case_names = [c["Case"] for c in self.resData.get("osy-cases", [])]
+            for case in case_names:
+                case_path = Path(self.resultsPath, case)
+                if not case_path.exists():
+                    case_path.mkdir(parents=True, exist_ok=True)
+
+            response = {
+                "message": "You have recycled results!",
+                "status_code": "success"
+            } 
+
+            return response
+            # urllib.request.urlretrieve(self.dataFile, dataFile)
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+        
+    def saveView(self, data, param):
+        try:
+
+            viewDataPath = Path(Config.DATA_STORAGE,self.case,'view', 'viewDefinitions.json')
+
+            viewData = File.readFile(viewDataPath)
+            viewData["osy-views"][param].append(data)
+
+            File.writeFile( viewData, viewDataPath)
+
+            response = {
+                "message": "You have created view!",
+                "status_code": "success"
+            }  
+
+            return response
+            # urllib.request.urlretrieve(self.dataFile, dataFile)
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+
+    def updateViews(self, data, param):
+        try:
+
+            viewDataPath = Path(Config.DATA_STORAGE,self.case,'view', 'viewDefinitions.json')
+
+            viewData = File.readFile(viewDataPath)
+            viewData["osy-views"][param] = data
+
+            File.writeFile( viewData, viewDataPath)
+
+            response = {
+                "message": "You have updated views!",
+                "status_code": "success"
+            }  
+
+            return response
+            # urllib.request.urlretrieve(self.dataFile, dataFile)
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+        
+    def readDataFile( self, caserunname ):
+        try:
+            dataFilePath = Path(Config.DATA_STORAGE, self.case, 'res',caserunname,'data.txt')
+            if os.path.exists(dataFilePath):
+                f = open(dataFilePath, mode="r", encoding='utf-8-sig')
+                data =  f.read()
+                f.close()
+            else:
+                data = None
+            return data
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+
+    def parseDataFile(self, dataFilePath):
+        try:
+            self.defaultValue = self.getParamDefaultValues()
+            data = {}
+            start_year = self.getYears()[0]
+            with open(dataFilePath, 'r') as f:
+                parsing = False
+                for line in f:
+                    line = line.rstrip().replace('\t', ' ')
+                    if line.startswith(";"):
+                        parsing = False
+                    if parsing:
+                        if line.startswith('['):
+                            element = line.split(',')
+                            region = element[0][1:]
+                            tech = element[1]
+                            fuel_emi = element[2]
+                
+                        elif line.startswith(start_year):
+                            years = line.rstrip(':= ;\n').split(' ')[0:]
+                            years = [i.strip(':=') for i in years]
+                        
+                        else:
+                            values = line.rstrip().split(' ')[1:]
+                            if param_current in ('DiscountRate'):
+                                region = line.split(' ')[0]
+                                dr = line.split(' ')[1]
+                                data[param_current].append(tuple([region, dr]))
+                            if param_current in ('OperationalLife', 'CapacityToActivityUnit', 'TotalTechnologyModelPeriodActivityLowerLimit', 'TotalTechnologyModelPeriodActivityUpperLimit', 'DiscountRateIdv'):
+                                if firstRow:
+                                    techs = line.rstrip(':= ;\n').split(' ')[0:]
+                                    firstRow=False
+                                else:
+                                    region = line.split(' ')[0]
+                                    for i, tech in enumerate(techs):
+                                        data[param_current].append(tuple([region, tech, values[i]]))
+                            if param_current in ('OutputActivityRatio','InputActivityRatio','EmissionActivityRatio'):
+                                mode = line.split(' ')[0]
+                                for i, year in enumerate(years):
+                                    data[param_current].append(tuple([region, fuel_emi, tech, year, mode, values[i]]))
+
+                            if param_current in ('CapacityFactor', 'SpecifiedDemandProfile'):
+                                timeslice = line.split(' ')[0]
+                                for i, year in enumerate(years):
+                                    data[param_current].append(tuple([region, tech, year, timeslice, values[i]]))
+
+                            if param_current in ('YearSplit'):
+                                timeslice = line.split(' ')[0]
+                                for i, year in enumerate(years):
+                                    data[param_current].append(tuple([region, year, timeslice, values[i]]))
+                            if param_current in ('TotalAnnualMaxCapacityInvestment','TotalAnnualMinCapacityInvestment','TotalTechnologyAnnualActivityUpperLimit', 'TotalTechnologyAnnualActivityLowerLimit', 'TotalAnnualMaxCapacity', 'ResidualCapacity', 'AvailabilityFactor', 'ResidualStorageCapacity'):
+                                tech = line.split(' ')[0]
+                                for i, year in enumerate(years):
+                                    data[param_current].append(tuple([region, tech, year, values[i]]))   
+                    if line.startswith(
+                        
+                        ('param DiscountRate',
+                        'param OutputActivityRatio',
+                        'param InputActivityRatio', 
+                        'param EmissionActivityRatio',
+                        'param TotalAnnualMaxCapacityInvestment',
+                        'param TotalAnnualMinCapacityInvestment',
+                        'param TotalTechnologyAnnualActivityUpperLimit',
+                        'param TotalTechnologyAnnualActivityLowerLimit',
+                        'param TotalAnnualMaxCapacity',
+                        'param ResidualCapacity',
+                        'param AvailabilityFactor',
+                        'param CapacityToActivityUnit',
+                        'param DiscountRateIdv',
+                        'param TotalTechnologyModelPeriodActivityLowerLimit',
+                        'param TotalTechnologyModelPeriodActivityUpperLimit',
+                        'param CapacityFactor',
+                        'param YearSplit',
+                        'param SpecifiedDemandProfile',
+                        'param OperationalLife',
+                        'param ResidualStorageCapacity'
+                        )):
+                        
+                        param_current = line.split(' ')[1]
+                        data[param_current] = []
+                        parsing = True
+                        if line.startswith(
+                            ('param OperationalLife',
+                             'param CapacityToActivityUnit',
+                             'param DiscountRateIdv',
+                             'param TotalTechnologyModelPeriodActivityLowerLimit',
+                             'param TotalTechnologyModelPeriodActivityUpperLimit'
+                             )):
+                            firstRow=True 
+ 
+            return data
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+
+    def validateInputs(self, caserunname):
+        try:
+            self.defaultValue = self.getParamDefaultValues()
+            data = {}
+            start_year = self.getYears()[0]
+            msg = ""
+
+            dataFilePath = Path(Config.DATA_STORAGE, self.case, 'res',caserunname,'data.txt')
+            if dataFilePath.is_file():
+                # with open(dataFilePath, 'r') as f:
+
+                #     parsing = False
+                #     for line in f:
+                #         line = line.rstrip().replace('\t', ' ')
+                #         if line.startswith(";"):
+                #             parsing = False
+
+                #         if parsing:
+                #             if line.startswith('['):
+
+                #                 element = line.split(',')
+                #                 region = element[0][1:]
+                #                 tech = element[1]
+                #                 fuel_emi = element[2]
+                    
+                #             elif line.startswith(start_year):
+                #                 years = line.rstrip(':= ;\n').split(' ')[0:]
+                #                 years = [i.strip(':=') for i in years]
+                            
+                #             else:
+                #                 values = line.rstrip().split(' ')[1:]
+
+                #                 if param_current in ('DiscountRate'):
+                #                     region = line.split(' ')[0]
+                #                     dr = line.split(' ')[1]
+                #                     data[param_current].append(tuple([region, dr]))
+
+                #                 if param_current in ('CapacityToActivityUnit', 'TotalTechnologyModelPeriodActivityLowerLimit', 'TotalTechnologyModelPeriodActivityUpperLimit', 'DiscountRateIdv'):
+                #                     if firstRow:
+                #                         techs = line.rstrip(':= ;\n').split(' ')[0:]
+                #                         firstRow=False
+                #                     else:
+                #                         region = line.split(' ')[0]
+                #                         for i, tech in enumerate(techs):
+                #                             data[param_current].append(tuple([region, tech, values[i]]))
+
+                #                 if param_current in ('OutputActivityRatio','InputActivityRatio','EmissionActivityRatio'):
+                #                     mode = line.split(' ')[0]
+                #                     for i, year in enumerate(years):
+                #                         data[param_current].append(tuple([region, fuel_emi, tech, year, mode, values[i]]))
+
+                #                 if param_current in ('CapacityFactor', 'SpecifiedDemandProfile'):
+                #                     timeslice = line.split(' ')[0]
+                #                     for i, year in enumerate(years):
+                #                         data[param_current].append(tuple([region, tech, year, timeslice, values[i]]))
+
+                #                 if param_current in ('YearSplit'):
+                #                     timeslice = line.split(' ')[0]
+                #                     for i, year in enumerate(years):
+                #                         data[param_current].append(tuple([region, year, timeslice, values[i]]))
+
+                #                 if param_current in ('TotalAnnualMaxCapacityInvestment','TotalAnnualMinCapacityInvestment','TotalTechnologyAnnualActivityUpperLimit', 'TotalTechnologyAnnualActivityLowerLimit', 'TotalAnnualMaxCapacity', 'ResidualCapacity', 'AvailabilityFactor'):
+                #                     tech = line.split(' ')[0]
+                #                     for i, year in enumerate(years):
+                #                         data[param_current].append(tuple([region, tech, year, values[i]]))   
+
+                #         if line.startswith(
+                            
+                #             ('param DiscountRate',
+                #             'param OutputActivityRatio',
+                #             'param InputActivityRatio', 
+                #             'param EmissionActivityRatio',
+                #             'param TotalAnnualMaxCapacityInvestment',
+                #             'param TotalAnnualMinCapacityInvestment',
+                #             'param TotalTechnologyAnnualActivityUpperLimit',
+                #             'param TotalTechnologyAnnualActivityLowerLimit',
+                #             'param TotalAnnualMaxCapacity',
+                #             'param ResidualCapacity',
+                #             'param AvailabilityFactor',
+
+                #             'param CapacityToActivityUnit',
+                #             'param DiscountRateIdv',
+                #             'param TotalTechnologyModelPeriodActivityLowerLimit',
+                #             'param TotalTechnologyModelPeriodActivityUpperLimit',
+                #             'param CapacityFactor',
+                #             'param YearSplit',
+
+                #             'param SpecifiedDemandProfile'
+                #             )):
+                            
+                #             param_current = line.split(' ')[1]
+                #             # params = Config.PARAMETERS_C[param_current].copy()
+                #             # params.append(param_current)
+                #             data[param_current] = []
+                #             # data[param_current].append(tuple(params))
+                #             parsing = True
+                #             if line.startswith(('param CapacityToActivityUnit'))  or line.startswith(('param DiscountRateIdv')) or line.startswith(('param TotalTechnologyModelPeriodActivityLowerLimit')) or line.startswith(('param TotalTechnologyModelPeriodActivityUpperLimit')):
+                #                 firstRow=True 
+                data = self.parseDataFile(dataFilePath)
+            else:
+                response = {
+                    "msg": 'Data file is not created for this case run!',
+                    "status_code": 'error'
+                }   
+                return response
+
+
+            ############################################### Create dataframes from data file
+            # df_IAR = pd.DataFrame(df_IAR.values[1:], columns=df_IAR.iloc[0] )
+            df_IAR = pd.DataFrame(data['InputActivityRatio'], columns=Config.PARAMETERS_C_full['InputActivityRatio'])
+            df_IAR['InputActivityRatio'] = df_IAR['InputActivityRatio'].astype(float)
+
+            df_TAMaxCI = pd.DataFrame(data['TotalAnnualMaxCapacityInvestment'], columns=Config.PARAMETERS_C_full['TotalAnnualMaxCapacityInvestment'])
+            # headers = df_TAMaxCI.iloc[0]
+            # df_TAMaxCI = pd.DataFrame(df_TAMaxCI.values[1:], columns=headers )
+            df_TAMaxCI['TotalAnnualMaxCapacityInvestment'] = df_TAMaxCI['TotalAnnualMaxCapacityInvestment'].astype(float)
+
+            df_TAMinCI = pd.DataFrame(data['TotalAnnualMinCapacityInvestment'], columns=Config.PARAMETERS_C_full['TotalAnnualMinCapacityInvestment'])
+            # headers = df_TAMinCI.iloc[0]
+            # df_TAMinCI = pd.DataFrame(df_TAMinCI.values[1:], columns=headers )
+            df_TAMinCI['TotalAnnualMinCapacityInvestment'] = df_TAMinCI['TotalAnnualMinCapacityInvestment'].astype(float)
+
+            df_TAAUL = pd.DataFrame(data['TotalTechnologyAnnualActivityUpperLimit'], columns=Config.PARAMETERS_C_full['TotalTechnologyAnnualActivityUpperLimit'])
+            # headers = df_TAAUL.iloc[0]
+            # df_TAAUL = pd.DataFrame(df_TAAUL.values[1:], columns=headers )
+            df_TAAUL['TotalTechnologyAnnualActivityUpperLimit'] = df_TAAUL['TotalTechnologyAnnualActivityUpperLimit'].astype(float)
+
+            df_TAALL = pd.DataFrame(data['TotalTechnologyAnnualActivityLowerLimit'], columns=Config.PARAMETERS_C_full['TotalTechnologyAnnualActivityLowerLimit'])
+            # headers = df_TAALL.iloc[0]
+            # df_TAALL = pd.DataFrame(df_TAALL.values[1:], columns=headers )
+            df_TAALL['TotalTechnologyAnnualActivityLowerLimit'] = df_TAALL['TotalTechnologyAnnualActivityLowerLimit'].astype(float)
+
+            df_TAMaxC = pd.DataFrame(data['TotalAnnualMaxCapacity'], columns=Config.PARAMETERS_C_full['TotalAnnualMaxCapacity'])
+            # headers = df_TAMaxC.iloc[0]
+            # df_TAMaxC = pd.DataFrame(df_TAMaxC.values[1:], columns=headers )
+            df_TAMaxC['TotalAnnualMaxCapacity'] = df_TAMaxC['TotalAnnualMaxCapacity'].astype(float)
+
+            df_RC = pd.DataFrame(data['ResidualCapacity'], columns=Config.PARAMETERS_C_full['ResidualCapacity'])
+            # headers = df_RC.iloc[0]
+            # df_RC = pd.DataFrame(df_RC.values[1:], columns=headers )
+            df_RC['ResidualCapacity'] = df_RC['ResidualCapacity'].astype(float)
+
+            df_AF = pd.DataFrame(data['AvailabilityFactor'], columns=Config.PARAMETERS_C_full['AvailabilityFactor'])
+            # headers = df_AF.iloc[0]
+            # df_AF = pd.DataFrame(df_AF.values[1:], columns=headers )
+            df_AF['AvailabilityFactor'] = df_AF['AvailabilityFactor'].astype(float)
+
+            df_CTAU = pd.DataFrame(data['CapacityToActivityUnit'], columns=Config.PARAMETERS_C_full['CapacityToActivityUnit'])
+            # headers = df_CTAU.iloc[0]
+            # df_CTAU = pd.DataFrame(df_CTAU.values[1:], columns=headers )
+            df_CTAU['CapacityToActivityUnit'] = df_CTAU['CapacityToActivityUnit'].astype(float)
+
+            df_TMPALL = pd.DataFrame(data['TotalTechnologyModelPeriodActivityLowerLimit'], columns=Config.PARAMETERS_C_full['TotalTechnologyModelPeriodActivityLowerLimit'])
+            # headers = df_TMPALL.iloc[0]
+            # df_TMPALL = pd.DataFrame(df_TMPALL.values[1:], columns=headers )
+            df_TMPALL['TotalTechnologyModelPeriodActivityLowerLimit'] = df_TMPALL['TotalTechnologyModelPeriodActivityLowerLimit'].astype(float)
+
+
+            df_TMPAUL = pd.DataFrame(data['TotalTechnologyModelPeriodActivityUpperLimit'], columns=Config.PARAMETERS_C_full['TotalTechnologyModelPeriodActivityUpperLimit'])
+            # headers = df_TMPAUL.iloc[0]
+            # df_TMPAUL = pd.DataFrame(df_TMPAUL.values[1:], columns=headers )
+            df_TMPAUL['TotalTechnologyModelPeriodActivityUpperLimit'] = df_TMPAUL['TotalTechnologyModelPeriodActivityUpperLimit'].astype(float)
+
+            df_CF = pd.DataFrame(data['CapacityFactor'], columns=Config.PARAMETERS_C_full['CapacityFactor'])
+            # headers = df_CF.iloc[0]
+            # df_CF = pd.DataFrame(df_CF.values[1:], columns=headers )
+            df_CF['CapacityFactor'] = df_CF['CapacityFactor'].astype(float)
+
+            df_YS = pd.DataFrame(data['YearSplit'], columns=Config.PARAMETERS_C_full['YearSplit'])
+            # headers = df_YS.iloc[0]
+            # df_YS = pd.DataFrame(df_YS.values[1:], columns=headers )
+            df_YS['YearSplit'] = df_YS['YearSplit'].astype(float)
+
+            df_SDP = pd.DataFrame(data['SpecifiedDemandProfile'], columns=Config.PARAMETERS_C_full['SpecifiedDemandProfile'])
+            # headers = df_SDP.iloc[0]
+            # df_SDP = pd.DataFrame(df_SDP.values[1:], columns=headers )
+            df_SDP['SpecifiedDemandProfile'] = df_SDP['SpecifiedDemandProfile'].astype(float)
+
+            df_DRI = pd.DataFrame(data['DiscountRateIdv'], columns=Config.PARAMETERS_C_full['DiscountRateIdv'])
+            # headers = df_DRI.iloc[0]
+            # df_DRI = pd.DataFrame(df_DRI.values[1:], columns=headers )
+            df_DRI['DiscountRateIdv'] = df_DRI['DiscountRateIdv'].astype(float)
+
+            df_DR = pd.DataFrame(data['DiscountRate'], columns=Config.PARAMETERS_C_full['DiscountRate'])
+            # headers = df_DR.iloc[0]
+            # df_DR = pd.DataFrame(df_DR.values[1:], columns=headers )
+            df_DR['DiscountRate'] = df_DR['DiscountRate'].astype(float)
+
+            ########################################################################################## df za provjeru 1
+            df_merge1 = df_DRI.merge(df_DR, on=['r'])
+
+            ########################################################################################## df za provjeru 3
+            df_merge3 = df_TAMaxCI.merge(df_TAMinCI, on=['r','t','y'])
+
+            ########################################################################################## df za provjeru 4
+            df_merge4 = df_TAAUL.merge(df_TAALL, on=['r','t','y'])
+
+            ########################################################################################## df za provjeru 5
+            df_merge5 = df_TAMaxC.merge(df_RC, on=['r','t','y'],how='outer')
+            df_merge5['ResidualCapacity'] = df_merge5['ResidualCapacity'].fillna(0)
+            df_merge5['TotalAnnualMaxCapacity'] = df_merge5['TotalAnnualMaxCapacity'].fillna(self.defaultValue['TAMaxC'])
+
+            ########################################################################################## df za provjeru 6
+            df_merge6 = df_merge5.merge(df_TAMinCI, on=['r','t','y'], how='outer')
+            df_merge6['TotalAnnualMinCapacityInvestment'] = df_merge6['TotalAnnualMinCapacityInvestment'].fillna(self.defaultValue['TAMinCI'])
+
+            ########################################################################################## df za provjeru 7
+            df_merge71 = df_TAALL.merge( df_TAMaxC, how='left', on=['r','t','y']).merge(df_AF, how='left', on=['r','t','y']).merge(df_CTAU, how='left', on=['r','t'])
+            df_merge72 = df_CF.merge(df_YS, on=['r','y','l'], how='left')
+
+            df_merge71['TotalTechnologyAnnualActivityLowerLimit'] = df_merge71['TotalTechnologyAnnualActivityLowerLimit'].fillna(value=self.defaultValue['TAL'])
+            df_merge71['TotalAnnualMaxCapacity'] = df_merge71['TotalAnnualMaxCapacity'].fillna(value=self.defaultValue['TAMaxC'])
+            df_merge71['AvailabilityFactor'] = df_merge71['AvailabilityFactor'].fillna(value=self.defaultValue['AF'])
+            df_merge71['CapacityToActivityUnit'] = df_merge71['CapacityToActivityUnit'].fillna(value=self.defaultValue['CAU'])
+
+            df_merge72['CapacityFactor*YearSplit'] = df_merge72['CapacityFactor'] * df_merge72['YearSplit']
+            #df_merge52['Sum'] = df_merge52.groupby(['r','t','y'])['YearSplit'].transform('sum')
+            df_merge72 = df_merge72.groupby(['r','t','y'])['CapacityFactor*YearSplit'].sum().reset_index().rename(columns={'CapacityFactor*YearSplit':'Sum'})
+            df_merge7 = df_merge71.merge(df_merge72, on=['r','y','t'], how='left')
+            df_YStmp = df_YS.groupby(['r','y'])['YearSplit'].sum().reset_index().rename(columns={'YearSplit':'Sum'})
+
+            # df_merge7 = df_merge7.set_index(['r','y']).fillna(df_YStmp.set_index(['r','y'])).reset_index()
+            df_merge7 = pd.merge(df_merge7, df_YStmp, on=['r','y'],  suffixes=("", "_y"), how="left")
+            df_merge7['Sum'].fillna(df_merge7['Sum_y'], inplace=True)
+
+            df_merge7.drop(columns=['Sum_y'],axis=1, inplace=True)
+
+            ################################################################################################ df za provjeru 8
+            df_TAALL = df_TAALL.groupby(['r','t'])['TotalTechnologyAnnualActivityLowerLimit'].sum().reset_index().rename(columns={'TotalTechnologyAnnualActivityLowerLimit':'Sum_TotalTechnologyAnnualActivityLowerLimit'})
+            df_merge8 = df_TMPAUL.merge(df_TAALL, on=['r','t'], how='left')
+            df_merge8['TotalTechnologyModelPeriodActivityUpperLimit'] = df_merge8['TotalTechnologyModelPeriodActivityUpperLimit'].fillna(self.defaultValue['TMPAU'])
+            df_merge8 = df_merge8[df_merge8['Sum_TotalTechnologyAnnualActivityLowerLimit'].notna()]
+
+
+            ################################################################################################ df za provjeru 10
+
+
+            ########################################################################################### C H E C K S ###############################################################################
+
+            ########################################################################################### C H E C K 1
+            print("CHECK 1. Identifying technologies where Discount Rate idv is different from global Discount Rate  for (r, t)")
+            msg+="CHECK 1. Identifying technologies where Discount Rate idv is different from global Discount Rate  for (r, t)\n"
+            df_check1 = df_merge1[
+                (df_merge1['DiscountRateIdv'] != df_merge1['DiscountRate'])
+            ]
+            if not df_check1.empty:
+                print("CHECK 1: Error")
+                print(df_check1)
+                msg+="<i class='fa fa-exclamation-triangle danger' aria-hidden='true'></i>CHECK 1: Error\n"
+                msg+=df_check1.to_string()
+                msg+="\n\n"
+            else:
+                print("CHECK 1: Success")
+                msg+="<i class='fa fa-check-square-o success' aria-hidden='true'></i>CHECK 1: Success\n\n"
+
+            ########################################################################################### C H E C K 2
+            print("CHECK 2. Check if YearSplits sums to 1 for y in YEAR")
+            msg+="CHECK 2. Check if YearSplits sums to 1 for y in YEAR\n"
+            df_YS = df_YS.groupby(['r','y'])['YearSplit'].sum().reset_index()
+            df_check2 = df_YS[(df_YS["YearSplit"] != 1)]
+            if not df_check2.empty:
+                print("CHECK 2: Error")
+                print(df_check2)
+                msg+="<i class='fa fa-exclamation-triangle danger' aria-hidden='true'></i>CHECK 2: Error\n"
+                msg+=df_check2.to_string()
+                msg+="\n\n"
+            else:
+                print("CHECK 2: Success")
+                msg+="<i class='fa fa-check-square-o success' aria-hidden='true'></i>CHECK 2: Success\n\n"
+
+            ########################################################################################### C H E C K 3
+            print("CHECK 3. Checking if MinCapacityInvestment bounds are greater the MaxCapacityInvestment bounds for (r, t, y)")
+            msg+="CHECK 3. Checking if MinCapacityInvestment bounds are greater the MaxCapacityInvestment bounds for (r, t, y)\n"
+            df_check3 = df_merge3[
+                (df_merge3['TotalAnnualMaxCapacityInvestment'] != -1) &
+                (df_merge3['TotalAnnualMinCapacityInvestment'] != 0) &
+                (df_merge3['TotalAnnualMaxCapacityInvestment'] < df_merge3['TotalAnnualMinCapacityInvestment'])
+            ]
+            if not df_check3.empty:
+                print("CHECK 3: Error")
+                print(df_check3)
+                msg+="<i class='fa fa-exclamation-triangle danger' aria-hidden='true'></i>CHECK 3: Error\n"
+                msg+=df_check3.to_string()
+                msg+="\n\n"
+            else:
+                print("CHECK 3: Success")
+                msg+="<i class='fa fa-check-square-o success' aria-hidden='true'></i>CHECK 3: Success\n\n"
+
+            ########################################################################################### C H E C K 4
+            print("CHECK 4. Checking if TotalTechnologyAnnualActivityLowerLimit bounds are greater than TotalTechnologyAnnualActivityUpperLimit bounds for (r, t, y)")
+            msg+="CHECK 4. Checking if TotalTechnologyAnnualActivityLowerLimit bounds are greater than TotalTechnologyAnnualActivityUpperLimit bounds for (r, t, y)\n"
+            df_check4 = df_merge4[
+                (df_merge4['TotalTechnologyAnnualActivityUpperLimit'] != -1) &
+                (df_merge4['TotalTechnologyAnnualActivityLowerLimit'] != 0) &
+                (df_merge4['TotalTechnologyAnnualActivityUpperLimit'] < df_merge4['TotalTechnologyAnnualActivityLowerLimit'])
+            ]
+            if not df_check4.empty:
+                print("CHECK 4: Error")
+                print(df_check4)
+                msg+="<i class='fa fa-exclamation-triangle danger' aria-hidden='true'></i>CHECK 4: Error\n"
+                msg+=df_check4.to_string()
+                msg+="\n\n"
+            else:
+                print("CHECK 4: Success")
+                msg+="<i class='fa fa-check-square-o success' aria-hidden='true'></i>CHECK 4: Success\n\n"
+
+            ########################################################################################### C H E C K 5
+            print("CHECK 5. Checking if ResidualCapacity is greater than TotalAnnualMaxCapacity for (r, t, y)")
+            msg+="CHECK 5. Checking if ResidualCapacity is greater than TotalAnnualMaxCapacity for (r, t, y)\n"
+            df_check5 = df_merge5[
+                (df_merge5['TotalAnnualMaxCapacity'] != -1) & 
+                (df_merge5['ResidualCapacity'] != 0) & 
+                (df_merge5['TotalAnnualMaxCapacity'] < df_merge5['ResidualCapacity'])
+                ]
+            if not df_check5.empty:
+                print("CHECK 5: Error")
+                print(df_check5)
+                msg+="<i class='fa fa-exclamation-triangle danger' aria-hidden='true'></i>CHECK 5: Error\n"
+                msg+=df_check5.to_string()
+                msg+="\n\n"
+            else:
+                print("CHECK 5: Success")
+                msg+="<i class='fa fa-check-square-o success' aria-hidden='true'></i>CHECK 5: Success\n\n"
+
+            ########################################################################################### C H E C K 6
+            print("CHECK 6. Checking if ResidualCapacity plus TotalAnnualMinCapacityInvestment is greater than TotalAnnualMaxCapacity for (r, t, y)")
+            msg+="CHECK 6. Checking if ResidualCapacity plus TotalAnnualMinCapacityInvestment is greater than TotalAnnualMaxCapacity for (r, t, y)\n"
+            df_check6 = df_merge6[
+                (df_merge6['TotalAnnualMaxCapacity'] != -1) &
+                (df_merge6['ResidualCapacity'] != 0) &
+                (df_merge6['TotalAnnualMaxCapacity'] < df_merge6['ResidualCapacity'] + df_merge6['TotalAnnualMinCapacityInvestment'])
+            ]
+            if not df_check6.empty:
+                print("CHECK 6: Error")
+                print(df_check6)
+                msg+="<i class='fa fa-exclamation-triangle danger' aria-hidden='true'></i>CHECK 6: Error\n"
+                msg+=df_check6.to_string()
+                msg+="\n\n"
+            else:
+                print("CHECK 6: Success")
+                msg+="<i class='fa fa-check-square-o success' aria-hidden='true'></i>CHECK 6: Success\n\n"
+
+            ########################################################################################### C H E C K 7
+            print("CHECK 7. Checking if there is sufficient available capacity to meet TotalTechnologyAnnualActivityLowerLimit for (r, t, y)")
+            msg+="CHECK 7. Checking if there is sufficient available capacity to meet TotalTechnologyAnnualActivityLowerLimit for (r, t, y)\n"
+            df_check7 = df_merge7[
+                (df_merge7['TotalAnnualMaxCapacity'] != 0) &
+                (df_merge7['TotalAnnualMaxCapacity'] != -1) &
+                (df_merge7['TotalTechnologyAnnualActivityLowerLimit'] != 0) &
+                (df_merge7['AvailabilityFactor'] != 0) &
+                (df_merge7['CapacityToActivityUnit'] != 0) &
+                (df_merge7['Sum'] * df_merge7['TotalAnnualMaxCapacity'] * df_merge7['AvailabilityFactor'] * df_merge7['CapacityToActivityUnit'] < df_merge7['TotalTechnologyAnnualActivityLowerLimit'])
+            ]
+            if not df_check7.empty:
+                print("CHECK 7: Error")
+                print(df_check7)
+                msg+="<i class='fa fa-exclamation-triangle danger' aria-hidden='true'></i>CHECK 7: Error\n"
+                msg+=df_check7.to_string()
+                msg+="\n\n"
+            else:
+                print("CHECK 7: Success")
+                msg+="<i class='fa fa-check-square-o success' aria-hidden='true'></i>CHECK 7: Success\n\n"
+
+            ########################################################################################### C H E C K 8
+            print("CHECK 8. Checking if TotalTechnologyModelPeriodActivityUpperLimit is less than accumulative TotalTechnologyAnnualActivityLowerLimit for (r, t)")
+            msg+="CHECK 8. Checking if TotalTechnologyModelPeriodActivityUpperLimit is less than accumulative TotalTechnologyAnnualActivityLowerLimit for (r, t)\n"
+            df_check8 = df_merge8[
+                (df_merge8['TotalTechnologyModelPeriodActivityUpperLimit'] != -1) &
+                (df_merge8['TotalTechnologyModelPeriodActivityUpperLimit'] < df_merge8['Sum_TotalTechnologyAnnualActivityLowerLimit'])
+            ]
+            if not df_check8.empty:
+                print("CHECK 8: Error")
+                print(df_check8)
+                msg+="<i class='fa fa-exclamation-triangle danger' aria-hidden='true'></i>CHECK 8: Error\n"
+                msg+=df_check8.to_string()
+                msg+="\n\n"
+            else:
+                print("CHECK 8: Success")
+                msg+="<i class='fa fa-check-square-o success' aria-hidden='true'></i>CHECK 8: Success\n\n"
+
+            ########################################################################################### C H E C K 9
+            print("CHECK 9. Checking if Specified Demand Profile sums to 1 for (f, y)")
+            msg+="CHECK 9. Checking if Specified Demand Profile sums to 1 for (f, y)\n"
+            df_SDP = df_SDP.groupby(['r','f','y'])['SpecifiedDemandProfile'].sum().reset_index()
+            df_check9 = df_SDP[(df_SDP["SpecifiedDemandProfile"] > 1.001) | (df_SDP["SpecifiedDemandProfile"] < 0.999)]
+
+            if not df_check9.empty:
+                print("CHECK 9: Error")
+                print(df_check9)
+                msg+="<i class='fa fa-exclamation-triangle danger' aria-hidden='true'></i>CHECK 9: Error\n"
+                msg+=df_check9.to_string()
+                msg+="\n\n"
+            else:
+                print("CHECK 9: Success")
+                msg+="<i class='fa fa-check-square-o success' aria-hidden='true'></i>CHECK 9: Success\n\n"
+
+            ########################################################################################### C H E C K 10
+            print("CHECK 10. Checking if ResidualCapacity plus cumulative TotalAnnualMinCapacityInvestment is greater than TotalAnnualMaxCapacity for (r, t, y)")
+            msg+="CHECK 10. Checking if ResidualCapacity plus cumulative TotalAnnualMinCapacityInvestment is greater than TotalAnnualMaxCapacity for (r, t, y)\n"
+            df_merge101 = df_TAMinCI.merge(df_RC, on=['r','t','y'],  how='outer')
+            df_merge101['TotalAnnualMinCapacityInvestment'] = df_merge101['TotalAnnualMinCapacityInvestment'].fillna(value=0)
+            df_merge101['ResidualCapacity'] = df_merge101['ResidualCapacity'].fillna(value=0)
+            tech_current = ''
+            merge102 = []
+            for index, row in df_merge101.iterrows():
+                tmp = {}
+                if tech_current != row['t']:
+                    Sum = 0
+                tmp['r'] = row['r']
+                tmp['t'] = row['t']
+                Sum += row['TotalAnnualMinCapacityInvestment'] #+ row['ResidualCapacity']
+                tmp['y'] = row['y']
+                tmp['Sum'] = Sum
+                merge102.append(tmp)
+                tech_current = row['t']
+
+            if not merge102:
+                df_merge102 = pd.DataFrame(columns=['r', 't', 'y', 'Sum'])
+            else:
+                df_merge102 = pd.DataFrame(merge102)
+
+            df_merge10 = df_merge101.merge(df_merge102, on=['r','t','y'],  how='outer').merge(df_TAMaxC, on=['r','t','y'],  how='outer')
+            df_merge10['TotalAnnualMaxCapacity'] = df_merge10['TotalAnnualMaxCapacity'].fillna(value=999999)
+            df_merge10['TotalAnnualMinCapacityInvestment'] = df_merge10['TotalAnnualMinCapacityInvestment'].fillna(value=0)
+            df_merge10['ResidualCapacity'] = df_merge10['ResidualCapacity'].fillna(value=0)
+            df_merge10['Sum'] = df_merge10['Sum'].fillna(value=0)
+
+            df_check10 = df_merge10[
+                (df_merge10['TotalAnnualMaxCapacity'] != -1) & 
+                (df_merge10['TotalAnnualMaxCapacity'] < df_merge10['Sum'] + df_merge10['ResidualCapacity'])
+            ]
+            if not df_check10.empty:
+                print("CHECK 10: Error")
+                print(df_check10)
+                msg+="<i class='fa fa-exclamation-triangle danger' aria-hidden='true'></i>CHECK 10: Error\n"
+                msg+=df_check10.to_string()
+                msg+="\n\n"
+            else:
+                print("CHECK 10: Success")
+                msg+="<i class='fa fa-check-square-o success' aria-hidden='true'></i>CHECK 10: Success\n\n"
+
+            #print('msg \n', msg)
+
+            response = {
+                "msg": msg,
+                "status_code": 'success'
+            }   
+            return response
+        except(IOError, KeyError):
+            response = {
+                "msg": 'Some of the params are missing in data file (data file created before 4.9 ver). Please generate data file again and run check',
+                "status_code": 'error'
+            } 
+            return response  
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+        
+    def preprocessData(self, data_infile, data_outfile):
+        try:
+            lines = []
+            with open(data_infile, 'r') as f1:
+                for line in f1:
+                    if not line.startswith(('set MODEper','set MODEx', 'end;')):
+                        lines.append(line)
+
+            year_list = self.getYears()
+            fuel_list = self.getCommNames()
+            tech_list = self.getTechNames()
+            emi_list = self.getEmiNames()
+            stg_list = self.getStgNames()
+
+            start_year = year_list[0]
+
+            data_all = []
+            input_fuel_list = []
+            data = {}
+            with open(data_infile, 'r') as f:
+                parsing = False
+                for line in f:
+                    line = line.rstrip().replace('\t', ' ')
+                    if line.startswith(";"):
+                        parsing = False
+                    if parsing:
+                        if line.startswith('['):
+                            element = line.split(',')
+                            region = element[0][1:]
+                            tech = element[1]
+                            fuel_emi = element[2]
+                
+                        elif line.startswith(start_year):
+                            years = line.rstrip(':= ;\n').split(' ')[0:]
+                            years = [i.strip(':=') for i in years]
+                        
+                        else:
+                            values = line.rstrip().split(' ')[1:]
+                            if param_current in ('DiscountRate'):
+                                region = line.split(' ')[0]
+                                dr = line.split(' ')[1]
+                                data[param_current].append(tuple([region, dr]))
+                            if param_current in ('OperationalLife', 'DiscountRateIdv'):
+                                if firstRow:
+                                    techs = line.rstrip(':= ;\n').split(' ')[0:]
+                                    firstRow=False
+                                else:
+                                    region = line.split(' ')[0]
+                                    for i, tech in enumerate(techs):
+                                        data[param_current].append(tuple([ region, tech, values[i]]))
+                            if param_current in ('OutputActivityRatio','InputActivityRatio','EmissionActivityRatio', 'EmissionToActivityChangeRatio'):
+                                mode = line.split(' ')[0]
+                                data[param_current].append(tuple([ fuel_emi, tech, mode ]))
+                                data_all.append(tuple([tech, mode]))
+                            # version 5.4 16.12.2025.
+                            if param_current in ('InputToNewCapacityRatio','InputToTotalCapacityRatio'):
+                                fuel = line.split(' ')[0]
+                                data[param_current].append(tuple([ fuel, tech ]))
+                                if fuel not in input_fuel_list:
+                                    input_fuel_list.append(fuel)
+
+                            ################################
+                            if param_current in ('TechnologyToStorage','TechnologyFromStorage'):
+                                if firstRow:
+                                    modes = line.rstrip(':= ;\n').split(' ')[0:]
+                                    firstRow=False
+                                else:
+                                    stg = line.split(' ')[0]
+                                    value = line.split(' ')[1:]
+                                    data_all.append(tuple([tech, mode]))
+                                    for i, mode in enumerate(modes):
+                                        if(value[i] != '0'):
+                                            data[param_current].append(tuple([ stg, tech, mode]))
+                                        
+                                        
+
+
+                    if line.startswith(
+                        (
+                        'param OutputActivityRatio',
+                        'param InputActivityRatio', 
+                        'param EmissionActivityRatio',
+                        'param EmissionToActivityChangeRatio',
+                        'param OperationalLife',
+                        'param DiscountRateIdv',
+                        'param DiscountRate','param TechnologyToStorage','param TechnologyFromStorage',
+                        'param InputToNewCapacityRatio',
+                        'param InputToTotalCapacityRatio', 
+                        )):
+                        
+                        param_current = line.split(' ')[1]
+                        data[param_current] = []
+                        parsing = True
+                        if line.startswith(('param OperationalLife','param DiscountRateIdv','param TechnologyToStorage','param TechnologyFromStorage')):
+                            firstRow=True
+
+
+            data_out = data['OutputActivityRatio']
+            data_inp = data['InputActivityRatio']
+            data_emi = data['EmissionActivityRatio']
+            data_emichange = data['EmissionToActivityChangeRatio']
+            data_tts = data['TechnologyToStorage']
+            data_tfs = data['TechnologyFromStorage']
+            data_itnc = data['InputToNewCapacityRatio']
+            data_ittc = data['InputToTotalCapacityRatio']
+                            
+            data_out = list(set(data_out))
+            data_inp = list(set(data_inp))
+            data_all = list(set(data_all))
+            data_emi = list(set(data_emi))
+            data_emichange = list(set(data_emichange))
+            data_tts = list(set(data_tts))
+            data_tfs = list(set(data_tfs))
+            data_itnc = list(set(data_itnc))
+            data_ittc = list(set(data_ittc))
+
+            dict_out = defaultdict(list)
+            dict_inp = defaultdict(list)
+            dict_all = defaultdict(list)
+            dict_emi = defaultdict(list)
+            dict_emichange = defaultdict(list)
+            dict_tts = defaultdict(list)
+            dict_tfs = defaultdict(list)
+            dict_itnc =defaultdict(list)
+            dict_ittc =defaultdict(list)
+
+            for fuel, tech, mode in data_out:
+                dict_out[fuel].append((mode, tech))
+
+            for fuel, tech, mode in data_inp:
+                dict_inp[fuel].append((mode, tech))
+
+            for emi, tech, mode in data_emi:
+                dict_emi[emi].append((mode, tech))
+
+            for emi, tech, mode in data_emichange:
+                dict_emichange[emi].append((mode, tech))
+
+            for stg, tech, mode in data_tts:
+                dict_tts[stg].append((mode, tech))
+
+            for stg, tech, mode in data_tfs:
+                dict_tfs[stg].append((mode, tech))
+
+            for fuel, tech in data_itnc:
+                dict_itnc[fuel].append(tech)
+
+            for fuel, tech in data_ittc:
+                dict_ittc[fuel].append(tech)                            
+
+            for tech, mode in data_all:
+                if mode not in dict_all[tech]:
+                    dict_all[tech].append(mode)
+
+            #################################################### conversions ls/ld/lh
+
+            # self.seIDs = self.getSeIds()
+            # self.seMap = self.getSeMap()
+            # self.dtIDs = self.getDtIds()
+            # self.dtMap = self.getDtMap()
+            # self.dtbIDs = self.getDtbIds()
+            # self.dtbMap = self.getDtbMap()
+
+            # self.seasons = ''
+            # for seId in self.seIDs:
+            #     self.seasons += '{} '.format(self.seMap[seId]) 
+
+            # self.daytypes = ''
+            # for dtId in self.dtIDs:
+            #     self.daytypes += '{} '.format(self.dtMap[dtId]) 
+
+            # self.dailytimebrackets = ''
+            # for dtbId in self.dtbIDs:
+            #     self.dailytimebrackets += '{} '.format(self.dtbMap[dtbId]) 
+
+            # timeslices = self.genData["osy-ts"]
+            # seasons = self.genData["osy-se"]
+            # daytypes = self.genData["osy-dt"]
+            # dailytypebrackets = self.genData["osy-dtb"]
+
+            # seString = ''
+            # dtString = ''
+            # dtbString = ''
+            # for ts in timeslices:           
+            #     seString += '{} '.format(ts['Ts'])
+            #     for se in seasons:
+            #         if se['Se'] == ts['SE'][0]:
+            #             seString += '{} '.format(1)
+            #         else:
+            #             seString += '{} '.format(0)
+
+            #     dtString += '{} '.format(ts['Ts'])
+            #     for dt in daytypes :
+            #         if dt['Dt'] == ts['DT'][0]:
+            #             dtString += '{} '.format(1)
+            #         else:
+            #             dtString += '{} '.format(0)
+
+
+            #     dtbString += '{} '.format(ts['Ts'])
+            #     for dtb in dailytypebrackets :
+            #         if dtb['Dtb'] == ts['DTB'][0]:
+            #             dtbString += '{} '.format(1)
+            #         else:
+            #             dtbString += '{} '.format(0)
+
+
+            #     seString += '{}'.format('\n')
+            #     dtString += '{}'.format('\n')
+            #     dtbString += '{}'.format('\n')
+
+            # seString += '{}{}'.format(";",'\n')
+            # dtString += '{}{}'.format(";",'\n')            
+            # dtbString += '{}{}'.format(";",'\n')
+
+            # lines.append('{} {} {} {} {} {}'.format('param', 'Conversionls','default', 0, ':','\n'))
+            # lines.append('{}{}{}'.format(self.seasons, ':=', '\n'))
+            # lines.append('{}{}'.format(seString,'\n'))
+
+            # lines.append('{} {} {} {} {} {}'.format('param', 'Conversionld','default', 0, ':','\n'))
+            # lines.append('{}{}{}'.format(self.daytypes, ':=', '\n'))
+            # lines.append('{}{}'.format(dtString,'\n'))
+
+            # lines.append('{} {} {} {} {} {}'.format('param', 'Conversionlh','default', 0, ':','\n'))
+            # lines.append('{}{}{}'.format(self.dailytimebrackets, ':=', '\n'))
+            # lines.append('{}{}'.format(dtbString,'\n'))
+
+            #     lines.append('{}{}'.format(seString,'\n'))
+            # lines.append('{}{}'.format(";",'\n'))
+            # lines.append('{}'.format('\n'))
+            
+            #################################################### CRF ANNUITY
+            OL_data = data['OperationalLife']
+            DRi_data = data['DiscountRateIdv']
+            DR_data = data['DiscountRate']
+            DR = float(DR_data[0][1])
+
+            OL = {}
+            DRi = {}
+            for r, t, ol in OL_data:
+                OL[t] = int(ol)
+            for r, t, dri in DRi_data:
+                DRi[t] = float(dri)
+            techs_string = ''
+            for tech in tech_list:
+                techs_string += '{} '.format(tech) 
+
+            #CRF calc
+            CapitalRecoveryFactor = {}
+            PvAnnuity = {}
+            for tech in tech_list:
+                if DRi[tech] == 0:
+                    CapitalRecoveryFactor[tech] = None
+                else:
+                    CapitalRecoveryFactor[tech] = round((1 - pow( (1 + DRi[tech]), -1) ) / (1 - pow( (1+DRi[tech]), -OL[tech] ) ), 4)
+                # PvAnnuity[tech] = (1 - pow((1 + DRi[tech]), -OL[tech])) * (1 + DRi[tech]) / DRi[tech]
+                if DR == 0:
+                    PvAnnuity[tech] = None
+                else:
+                    PvAnnuity[tech] = round((1 - pow((1 + DR), -OL[tech])) * (1 + DR) / DR, 4 )
+
+                # CapitalRecoveryFactor[tech] = round((1 - pow( (1 + DRi[tech]), -1) ) / (1 - pow( (1+DRi[tech]), -OL[tech] ) ), 4)
+                # PvAnnuity[tech] = round((1 - pow((1 + DR), -OL[tech])) * (1 + DR) / DR, 4 )
+
+            lines.append('{} {} {} {} {} {}'.format('param', 'CapitalRecoveryFactor','default', 0, ':','\n'))
+            lines.append('{}{}{}'.format(techs_string, ':=', '\n'))
+            rtString = ''
+            for tech in tech_list:
+                tmp = CapitalRecoveryFactor[tech]
+                rtString += '{} '.format(tmp)
+            lines.append('{}{}{}'.format('RE1 ', rtString, '\n'))
+            lines.append('{}{}'.format(';', '\n'))
+                
+            lines.append('{} {} {} {} {} {}'.format('param', 'PvAnnuity','default', 0, ':','\n'))
+            lines.append('{}{}{}'.format(techs_string, ':=', '\n'))
+            rtString = ''
+            for tech in tech_list:
+                tmp = PvAnnuity[tech]
+                rtString += '{} '.format(tmp)
+            lines.append('{}{}{}'.format('RE1 ', rtString, '\n'))
+            lines.append('{}{}'.format(';', '\n'))
+
+            #ispis linija iz originalnog data file
+            with open(data_outfile, 'w') as f2:
+                f2.writelines(lines)
+
+
+
+
+            # df_OL = pd.DataFrame(data['OperationalLife'], columns=['r','t','OperationalLife'])
+            # df_OL['OperationalLife'] = df_OL['OperationalLife'].astype(int)
+            # df_DRi = pd.DataFrame(data['DiscountRateIdv'], columns=['r','t','DiscountRateIdv'])
+            # df_DRi['DiscountRateIdv'] = df_DRi['DiscountRateIdv'].astype(float)
+            # df_CRF = pd.merge(df_DRi, df_OL, on=['r', 't'])
+            # df_CRF['CRF'] = (1 - pow( (1+df_CRF['DiscountRateIdv']), -1) ) / (1 - pow( (1+df_CRF['DiscountRateIdv']), -df_CRF['OperationalLife'] ) )
+
+
+
+            #function for appending values in data file
+            def file_output_function(dict, set_list, set_name, extra_char, type=None):
+                for each in set_list:
+
+                    if each in dict.keys():
+                        line = set_name + str(each) + ']:=' + str(dict[each]) + extra_char
+                        if set_list == tech_list:
+                            line = line.replace(',', '').replace(':=[', ':= ').replace(']*', '').replace("'", "")
+                        if type == 'input':
+                            line = line.replace(',', '').replace(':=[', ':= ').replace("']", '').replace("'", "")
+                        else:
+                            line = line.replace('),', ')').replace('[(', ' (').replace(')]', ')').replace("'", "")
+                    else:
+                        line = set_name + str(each) + ']:='
+                    file_out.write(line + ';' + '\n')
+
+            # Append lines at the end of the data file
+            with open(data_outfile, 'w') as file_out:  # 'a' to open in 'append' mode
+                file_out.writelines(lines)
+                file_output_function(dict_out, fuel_list, 'set MODExTECHNOLOGYperFUELout[', '')
+                file_output_function(dict_inp, fuel_list, 'set MODExTECHNOLOGYperFUELin[', '')
+                file_output_function(dict_emi, emi_list, 'set MODExTECHNOLOGYperEMISSION[', '')
+                file_output_function(dict_emichange, emi_list, 'set MODExTECHNOLOGYperEMISSIONChange[', '')
+                file_output_function(dict_tts, stg_list, 'set MODExTECHNOLOGYperSTORAGEto[', '')
+                file_output_function(dict_tfs, stg_list, 'set MODExTECHNOLOGYperSTORAGEfrom[', '')
+                #da li se ovaj mod po tech treba puniti i za emissijske tehnologije i sta to znaci u model file
+
+                file_output_function(dict_itnc, input_fuel_list, 'set INPUTxNEWxCAPACITYperFUEL[', '', type='input')
+                file_output_function(dict_ittc, input_fuel_list, 'set INPUTxTOTALxCAPACITYperFUEL[', '', type='input')
+
+                file_output_function(dict_all, tech_list, 'set MODEperTECHNOLOGY[', '*')
+
+
+                line = 'set INPUTxFUEL:=' + ', '.join(input_fuel_list)
+                file_out.write(line + ';' + '\n')
+
+                file_out.write('end;')
+
+        except Exception as err:
+            print(f"Unexpected error: {err}")
+            print("An error occurred:")
+            traceback.print_exc()  # Prints full traceback
+
+    def batchRun(self, solver, cases):
+        try:
+            batchlog=""
+            msg=""
+            status = "Success"
+            results = []
+
+            ##################################Sequential code
+            for caserun in cases:
+                logger.info("Starting batch run optimization process for model %s caserun %s!", self.case, caserun)
+                runout =self.run(solver, caserun)
+                logger.info("Batch run optimization process %s  %s !", runout["caserun"], runout["timer"])
+                msg+="Case: {0}{1}{2}".format( runout["caserun"], runout["timer"],  '\n')
+                batchlog+="{0}{1}{2}{3}{4}{5}{6}{7}{8}".format(runout["glpk_message"],'\n',runout["glpk_stdmsg"],'\n',runout["cbc_message"],'\n',runout["cbc_stdmsg"],'\n', '\n')
+                batchlog+="------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ {0}".format('\n')
+                if runout["status_code"] != 'success':
+                    status = "Error"
+
+            ##################################Multiprocessing
+            # m = multiprocessing.Manager()
+            # lock = m.Lock()
+            # with concurrent.futures.ProcessPoolExecutor() as executor:
+            #     results = [executor.submit(self.run, solver, caserun, lock  ) for caserun in cases]
+            #     #runout = [result.result() for result in results]
+
+            #     # for caserun in cases:
+            #     #     # lock[caserun] = threading.Lock() 
+            #     #     #lock = threading.Lock() 
+            #     #     t = executor.submit(self.run, solver, caserun)
+            #     #     results.append(t)
+
+            # for ft in concurrent.futures.as_completed(results):
+            #     runout = ft.result()
+            #     msg+="Case: {0}{1}{2}".format( runout["caserun"], runout["timer"],  '\n')
+            #     # batchlog+="GLPK status {0}{1}{2}GLPK log {3}{4}{5}{6}CBC log {7}{8}{9}{10}{11}".format(runout["status_code"], runout["timer"],'\n',runout["glpk_message"],'\n',runout["glpk_stdmsg"],'\n',runout["cbc_message"],'\n',runout["cbc_stdmsg"],'\n', '\n\n')
+            #     batchlog+="{0}{1}{2}{3}{4}{5}{6}{7}{8}".format(runout["glpk_message"],'\n',runout["glpk_stdmsg"],'\n',runout["cbc_message"],'\n',runout["cbc_stdmsg"],'\n', '\n')
+            #     batchlog+="------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ {0}".format('\n')
+            #     if runout["status_code"] != 'success':
+            #         status = "Error"
+            
+
+            #####################################Threading
+            # with concurrent.futures.ThreadPoolExecutor() as executor:
+            #     results = [executor.submit(self.run, solver, caserun  ) for caserun in cases]
+
+            #     # for caserun in cases:
+            #     #     # lock[caserun] = threading.Lock() 
+            #     #     #lock = threading.Lock() 
+            #     #     t = executor.submit(self.run, solver, caserun)
+            #     #     results.append(t)
+
+            # for f in concurrent.futures.as_completed(results):
+            #     runout = f.result()
+            #     msg+="Case: {0}{1}{2}".format( runout["caserun"], runout["timer"],  '\n')
+            #     # batchlog+="GLPK status {0}{1}{2}GLPK log {3}{4}{5}{6}CBC log {7}{8}{9}{10}{11}".format(runout["status_code"], runout["timer"],'\n',runout["glpk_message"],'\n',runout["glpk_stdmsg"],'\n',runout["cbc_message"],'\n',runout["cbc_stdmsg"],'\n', '\n\n')
+            #     batchlog+="{0}{1}{2}{3}{4}{5}{6}{7}{8}".format(runout["glpk_message"],'\n',runout["glpk_stdmsg"],'\n',runout["cbc_message"],'\n',runout["cbc_stdmsg"],'\n', '\n')
+            #     batchlog+="------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ {0}".format('\n')
+            #     if runout["status_code"] != 'success':
+            #         status = "Error"
+
+
+
+
+            ##########################################CUSOM THREAD IMPLEMENATATION
+            # for caserun in cases:
+            #     # batchlog+="Run dor case {0}, started at {1}{2}".format(caserun,dt, '\n')
+            #     batchlog+="Case: {0}{1}".format(caserun, '\n')
+            #     batchlog+="------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ {0}".format('\n')
+            #     #df = self.generateDatafile(caserun)
+            #     #runout = self.run(solver, caserun)
+
+
+            #     # thread = CustomThread(target=self.run, args=(solver, caserun ) )
+            #     # thread.start()
+            #     # threads.append(thread)
+
+
+
+            # # for thread in threads:
+            #     #runout = thread.join()
+            #     #runout = threads[caserun].join()
+
+            #     msg+="Case: {0}{1}{2}".format(caserun, runout["timer"], '\n')
+            #     # batchlog+="GLPK status {0}{1}{2}GLPK log {3}{4}{5}{6}CBC log {7}{8}{9}{10}{11}".format(runout["status_code"], runout["timer"],'\n',runout["glpk_message"],'\n',runout["glpk_stdmsg"],'\n',runout["cbc_message"],'\n',runout["cbc_stdmsg"],'\n', '\n\n')
+            #     batchlog+="{0}{1}{2}{3}{4}{5}{6}{7}{8}".format(runout["glpk_message"],'\n',runout["glpk_stdmsg"],'\n',runout["cbc_message"],'\n',runout["cbc_stdmsg"],'\n', '\n')
+            #     batchlog+="------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ {0}".format('\n')
+            #     if runout["status_code"] != 'success':
+            #         status = "Error"
+            response = {
+                "log": batchlog,
+                "msg": msg,
+                "status": status
+            }           
+            return response
+
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+
+    def run(self, solver, caserun, lock=None, highs_options=None):
+        cbc_out = None
+        glpk_out = None
+        #the interface polls /progress while this request is still blocking
+        Progress.start(self.case, caserun, solver,
+                       ['preparing data', 'generating matrix', 'solving',
+                        'writing result files', 'preparing charts'])
+        Progress.stage(self.case, caserun, 'preparing data')
+
+        try:
+            if lock:
+                lock.acquire(timeout=5)
+
+            start_time = time.time()
+            txtOut = ""
+
+            # ---- PRECOMPUTE PATHS ----
+            base = Path(Config.DATA_STORAGE, self.case, "res", caserun)
+            self.dataFile = base / "data.txt"
+            self.dataFile_processed = base / "data_processed.txt"
+            self.resFile = base / "results.txt"
+            self.logFile = base / "logfile.log"
+            self.logFileTxt = base / "logfile.txt"
+            self.lpFile = base / "lp.lp"
+            self.mpsFile = base / "lp.mps"
+            self.glpFile = base / "model.glp"
+            self.resPath = base
+
+            modelfile = str(self.osemosysFile.resolve())
+            dataFile_processed = str(Path(self.dataFile_processed).resolve())
+            lpFile = str(Path(self.lpFile).resolve())
+            glpFile = str(Path(self.glpFile).resolve())
+            # None rather than 0.0: a path that cannot recover the constant must not
+            # report that there is none
+            self.objectiveConstant = None
+            resFile = str(Path(self.resFile).resolve())
+
+
+            # glpsol_path = str(Path(self.glpkFolder, "glpsol.exe"))
+            # cbc_path = str(Path(self.cbcFolder, "cbc.exe"))
+
+            
+            glpk_cwd = self.glpkFolder if self.glpsol_is_bundled else None
+            cbc_cwd  = self.cbcFolder  if self.cbc_is_bundled  else None
+
+
+            if not Path(self.glpsol_path).exists():
+                raise FileNotFoundError(f"glpsol.exe not found in: {self.glpsol_path}")
+
+            if not Path(self.cbc_path).exists():
+                raise FileNotFoundError(f"cbc.exe not found in: {self.cbc_path}")
+
+            self.deleteCaseResultsJSON(caserun)
+
+            # =========================================================
+            # ---- GLPK / HiGHS (exe) / HiGHS (highspy) / mosox --------
+            # =========================================================
+            # All of these follow the same pipeline as the CBC option: the MathProg model
+            # is translated into a matrix file (glpsol -> LP, or mosox -> MPS), the chosen
+            # optimizer solves THAT file, and its solution is converted into CBC's solution
+            # format, so MUIO's existing parser, CSVs, pivot data and visualization work
+            # unchanged. Every option solves exactly the same problem, so results are
+            # comparable across solvers.
+            if solver in ("glpk", "highs", "highs-exe", "highs-mosox"):
+                logger.info(f"Preprocessing case {caserun}")
+                self.preprocessData(self.dataFile, self.dataFile_processed)
+                logger.info("PREPROCESSING DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
+                txtOut += f"Preprocessing time {time.time() - start_time:0.2f}s\n"
+
+                # ---------------- translate ----------------
+                Progress.stage(self.case, caserun, 'generating matrix')
+                translate_start = time.time()
+                if solver == "highs-mosox":
+                    matrixFile = self.mpsFile
+                    translator = "mosox (MathProg -> MPS)"
+                    trans_out = Mosox.translate(self.mosoxFolder, self.osemosysFile,
+                                                self.dataFile_processed, self.mpsFile)
+                else:
+                    matrixFile = self.lpFile
+                    translator = "glpsol (MathProg -> LP)"
+                    trans_out = subprocess.run(
+                        [self.glpsol_path, "--check", "-m", modelfile, "-d", dataFile_processed,
+                         "--wlp", lpFile, "--wglp", glpFile],
+                        cwd=glpk_cwd,
+                        text=True,
+                        capture_output=True
+                    )
+                translate_time = time.time() - translate_start
+                # Size and kind of the problem, taken from the translator's report and
+                # from the matrix, so every solver records the same figures
+                _rows, _cols, _nz = Progress.readTranslatorOutput(
+                    (getattr(trans_out, 'stdout', '') or '')
+                    + (getattr(trans_out, 'stderr', '') or ''))
+                _kind, _ints = Progress.readMatrixInfo(matrixFile)
+                Progress.setModelInfo(self.case, caserun, _rows, _cols, _nz,
+                                      _kind, _ints)
+                # mosox does not call glpsol, so there is no file to read. The constant
+                # depends only on the data, so one recovered earlier for the same data
+                # is reused.
+                if solver != "highs-mosox":
+                    self.objectiveConstant = self.readAndDropGlpFile(glpFile)
+                    self.rememberObjectiveConstant(base, self.objectiveConstant)
+                else:
+                    self.objectiveConstant = self.recallObjectiveConstant(base)
+                Progress.setObjectiveConstant(self.case, caserun, self.objectiveConstant)
+                logger.info("CREATINON OF LP/MPS FILE DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
+                txtOut += f"Creation of LP/MPS file {translate_time:0.2f}s\n"
+
+                if trans_out.returncode != 0:
+                    return {
+                        "cbc_message": None, "cbc_stdmsg": None,
+                        "glpk_message": trans_out.stdout, "glpk_stdmsg": trans_out.stderr,
+                        "highs_message": "",
+                        "timer": "Error during creation of the LP/MPS file - check the LP file log.",
+                        "status_code": "error", "caserun": caserun,
+                    }
+
+                # ---------------- solve + convert ----------------
+                Progress.stage(self.case, caserun, 'solving')
+                solve_start = time.time()
+                solver_log = ""
+                if solver == "glpk":
+                    # GLPK solves the exported LP (same problem as every other option) and
+                    # its printable report is converted into CBC's solution format
+                    solverName = "GLPK (glpsol simplex)"
+                    reportFile = str(Path(self.resPath, "glpk_report.txt").resolve())
+                    solve_out = subprocess.run(
+                        [self.glpsol_path, "--lp", str(Path(matrixFile).resolve()), "-o", reportFile],
+                        cwd=glpk_cwd, text=True, capture_output=True
+                    )
+                    solver_log = (solve_out.stdout or "") + (solve_out.stderr or "")
+                    if solve_out.returncode != 0 or not Path(reportFile).exists():
+                        solve_flag, solve_msg = "error", "GLPK failed to solve the LP file."
+                    else:
+                        status, objective, nrows, ncols = SolutionConverters.fromGlpkReport(reportFile, self.resFile)
+                        solve_flag = "success" if status.upper().startswith("OPTIMAL") else "warning"
+                        solve_msg = "   {} - objective value {:.8f}".format(
+                            "Optimal" if solve_flag == "success" else status, objective)
+
+                elif solver == "highs-exe":
+                    # standalone HiGHS executable (no Python binding involved)
+                    solverName = "HiGHS standalone exe (barrier + crossover)"
+                    solve_flag, solve_msg, solver_log = HighsSolver.solveWithExe(
+                        self.highsFolder, matrixFile, self.resFile, highs_options)
+
+                else:
+                    # in-process HiGHS through the Python binding
+                    solverName = "HiGHS (highspy, barrier + crossover)"
+                    solve_flag, solve_msg, solver_log = HighsSolver.solve(
+                        matrixFile, self.resFile, highs_options)
+
+                solve_time = time.time() - solve_start
+                # The outcome is recorded whether or not a solution was reached
+                _outcome, _objective = Progress.readSolveOutcome(solve_msg, solver_log)
+                Progress.setSolveOutcome(self.case, caserun, _outcome, _objective)
+                logger.info("SOLUTION DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
+                txtOut += f"Solve time {solve_time:0.2f}s\n"
+
+                # ---------------- results, CSVs, pivot data ----------------
+                if solve_flag == "success":
+                    Progress.stage(self.case, caserun, "writing result files")
+                    self.generateCSVfromCBC(self.dataFile, self.resFile, self.resPath)
+                    Progress.stage(self.case, caserun, 'preparing charts')
+                    logger.info("CSV DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
+                    txtOut += f"csv files extraction time {time.time() - start_time:0.2f}s\n"
+                    self.generateResultsViewer(caserun)
+                    logger.info("PIVOT TABLE DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
+                    txtOut += f"Pivot data preparation time {time.time() - start_time:0.2f}s\n"
+
+                total_time = time.time() - start_time
+                fixed_msg = ''
+                if self.objectiveConstant:
+                    fixed_msg = ' - Fixed cost not carried in the matrix: {:.2f} (added to results)'.format(
+                        self.objectiveConstant)
+                timer_msg = solve_msg + fixed_msg + ' - Solve: {:0.2f}s - Translation ({}): {:0.2f}s - Full run incl. CSVs: {:0.2f}s'.format(
+                    solve_time, 'mosox' if solver == 'highs-mosox' else 'glpsol', translate_time, total_time)
+                run_summary = (
+                    '==================== RUN SUMMARY ====================\n'
+                    + 'Case run             : {}\n'.format(caserun)
+                    + 'Solver               : {}\n'.format(solverName)
+                    + 'Translator           : {}\n'.format(translator)
+                    + 'LP/MPS creation time : {:0.2f} s\n'.format(translate_time)
+                    + 'Solve time           : {:0.2f} s\n'.format(solve_time)
+                    + 'Result               : {}\n'.format(solve_msg.strip())
+                    + ('Fixed cost (constant): {:.8f}\n'.format(self.objectiveConstant)
+                       if self.objectiveConstant else '')
+                    + 'Full run incl. CSVs  : {:0.2f} s\n'.format(total_time)
+                    + '=====================================================\n\n'
+                )
+                return {
+                    "cbc_message": None, "cbc_stdmsg": None,
+                    "glpk_message": trans_out.stdout, "glpk_stdmsg": trans_out.stderr,
+                    "highs_message": run_summary + solver_log,
+                    "timer": timer_msg,
+                    "status_code": solve_flag,
+                    "caserun": caserun,
+                }
+
+            # =======================================================
+            # ---------------------- CBC -----------------------------
+            # =======================================================
+            else:
+                logger.info(f"Preprocessing case {caserun}")
+                self.preprocessData(self.dataFile, self.dataFile_processed)
+                logger.info("PREPROCESSING DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
+                txtOut += f"Preprocessing time {time.time() - start_time:0.2f}s\n"
+
+                Progress.stage(self.case, caserun, 'generating matrix')
+                glpk_out = subprocess.run(
+                    [self.glpsol_path, "--check", "-m", modelfile, "-d", dataFile_processed,
+                     "--wlp", lpFile, "--wglp", glpFile],
+                    cwd=cbc_cwd,
+                    text=True,
+                    capture_output=True
+                )
+
+                logger.info("CREATINON OF LP FILE DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
+                txtOut += f"Creation of LP file {time.time() - start_time:0.2f}s\n"
+                _rows, _cols, _nz = Progress.readTranslatorOutput(
+                    (glpk_out.stdout or '') + (glpk_out.stderr or ''))
+                _kind, _ints = Progress.readMatrixInfo(lpFile)
+                Progress.setModelInfo(self.case, caserun, _rows, _cols, _nz,
+                                      _kind, _ints)
+                self.objectiveConstant = self.readAndDropGlpFile(glpFile)
+                self.rememberObjectiveConstant(base, self.objectiveConstant)
+                Progress.setObjectiveConstant(self.case, caserun, self.objectiveConstant)
+
+                Progress.stage(self.case, caserun, 'solving')
+                cbc_out = subprocess.run(
+                    [self.cbc_path, lpFile, "solve", "-printing", "all", "-solu", resFile],
+                    cwd=self.cbcFolder,
+                    text=True,
+                    capture_output=True
+                )
+                logger.info("SOLUTION DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
+                txtOut += f"Solve time {time.time() - start_time:0.2f}s\n"
+
+            # =======================================================
+            # ---------------- ERROR HANDLING ------------------------
+            # =======================================================
+
+            if (cbc_out and cbc_out.returncode != 0) or (glpk_out and glpk_out.returncode != 0):
+                
+                msg = {
+                    "cbc_message": cbc_out.stdout if cbc_out else None,
+                    "cbc_stdmsg": cbc_out.stderr if cbc_out else None,
+                    "glpk_message": glpk_out.stdout if glpk_out else None,
+                    "glpk_stdmsg": glpk_out.stderr if glpk_out else None,
+                    "highs_message": None,
+                    "timer": "Solver error — check logs.",
+                    "status_code": "error",
+                    "caserun": caserun,
+                }
+                logger.info(f"ERROR HANDLING {msg}")
+                return msg
+
+            # =======================================================
+            # --------------------- SUCCESS --------------------------
+            # =======================================================
+
+            msg = (cbc_out.stdout if cbc_out else glpk_out.stdout).splitlines()
+
+            statusFlag = "warning"
+            customMsg = ""
+
+            if any("Optimal" in s for s in msg):
+                matching = [s for s in msg if "Optimal" in s]
+                customMsg = customMsg + matching[0] + " - "
+                times = [s for s in msg if "Total time (CPU seconds):" in s]
+                customMsg = customMsg + times[0]
+                statusFlag = "success"
+
+            if any("infeasible" in s for s in msg):
+                matching = [s for s in msg if "infeasible" in s]
+                customMsg = customMsg + matching[0] + " - "
+                times = [s for s in msg if "Total time (CPU seconds):" in s]
+                customMsg = customMsg + times[0]
+                statusFlag = "warning"
+
+            if any("ERROR" in s for s in msg):
+                matching = [s for s in msg if "ERROR" in s]
+                customMsg = customMsg + matching[0] + " - "
+                times = [s for s in msg if "Total time (CPU seconds):" in s]
+                customMsg = customMsg + times[0]
+                statusFlag = "error"
+
+            _outcome, _objective = Progress.readSolveOutcome(
+                customMsg, "\n".join(msg))
+            Progress.setSolveOutcome(self.case, caserun, _outcome, _objective)
+
+            if self.objectiveConstant:
+                customMsg += ' - Fixed cost not carried in the matrix: {:.2f} (added to results)'.format(
+                    self.objectiveConstant)
+
+            if statusFlag == "success" and cbc_out:
+                Progress.stage(self.case, caserun, 'writing result files')
+                self.generateCSVfromCBC(self.dataFile, self.resFile, self.resPath)
+                logger.info("CSV DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
+                txtOut = txtOut + ("csv files extraction time {:0.2f} s;{}".format(time.time() - start_time, '\n'))
+                Progress.stage(self.case, caserun, 'preparing charts')
+                self.generateResultsViewer(caserun)
+                logger.info("PIVOT TABLE DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
+                txtOut = txtOut + ("Pivot data preparation time {:0.2f}s;{}".format(time.time() - start_time, '\n'))
+            
+            logger.info("MESSAGES DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
+            txtOut = txtOut + ("Message preparation time {:0.2f}s;{}".format(time.time() - start_time, '\n'))
+            return {
+                "cbc_message": cbc_out.stdout if cbc_out else None,
+                "cbc_stdmsg": cbc_out.stderr if cbc_out else None,
+                "glpk_message": glpk_out.stdout if glpk_out else None,
+                "glpk_stdmsg": glpk_out.stderr if glpk_out else None,
+                "highs_message": None,
+                "timer": customMsg,
+                "status_code": statusFlag,
+                "caserun": caserun,
+            }
+
+        except Exception as ex:
+            logger.exception("Unhandled exception during solver execution")
+            raise
+        finally:
+            if lock:
+                lock.release()
+
+    def run_26022026( self, solver, caserun, lock=None ):
+        try:
+            caserunname = caserun
+            if lock is not None:
+                # self.caserunname = caserunname
+                # lock = {}
+                # lock[caserunname] = threading.Lock() 
+                lock.acquire()
+                caserunname = caserun
+
+            start_time = time.time()
+            txtOut = ""
+            self.dataFile = Path(Config.DATA_STORAGE, self.case, 'res',caserunname,'data.txt')
+            self.dataFile_processed = Path(Config.DATA_STORAGE, self.case, 'res',caserunname,'data_processed.txt')
+            self.resFile = Path(Config.DATA_STORAGE,self.case, 'res',caserunname,'results.txt')
+            self.logFile = Path(Config.DATA_STORAGE,self.case, 'res',caserunname,'logfile.log')
+            self.logFileTxt = Path(Config.DATA_STORAGE,self.case, 'res',caserunname,'logfile.txt')
+            self.lpFile = Path(Config.DATA_STORAGE,self.case, 'res',caserunname,'lp.lp')
+            self.resPath = Path(Config.DATA_STORAGE,self.case, 'res',caserunname)
+            
+            modelfile = '"{}"'.format(self.osemosysFile.resolve())
+            modelfile_original = '"{}"'.format(self.osemosysFileOriginal.resolve())
+            datafile = '"{}"'.format(self.dataFile.resolve())
+            datafile_processed = '"{}"'.format(self.dataFile_processed.resolve())
+            resultfile = '"{}"'.format(self.resFile.resolve())
+            logfile = '"{}"'.format(self.logFile.resolve())
+            logfiletxt = '"{}"'.format(self.logFileTxt.resolve())
+            lpfile = '"{}"'.format(self.lpFile.resolve())
+
+
+            
+
+            glpfolder =self.glpkFolder.resolve()
+            cbcfolder =self.cbcFolder.resolve()
+            # respath = self.resPath.resolve()
+            # resCBCPath = self.resCBCPath.resolve()
+
+            self.deleteCaseResultsJSON(caserunname)
+
+            if solver == 'glpk':
+                out = subprocess.run('glpsol -m ' + modelfile +' -d ' + datafile +' -o ' + resultfile, cwd=glpfolder,  capture_output=True, text=True, shell=True)
+            else:
+                #Matrix generation (creates an LP file with GLPK): glpsol --check -m [model].txt -d [data].txt --wlp [LPfile].lp
+                #Optimisation (solves LP file with CBC): cbc [LPfile].lp solve -solu [results].txt
+                #PREPROCESS data.txt
+                #subprocess.run('preprocess_data.py' + datafile + dataFile_processed)
+
+                logger.debug("Starting preprocessing step for case %s", caserunname)
+
+                self.preprocessData(self.dataFile, self.dataFile_processed)
+                #print("PREPROCESSING DONE! --- %s seconds --- %s" % (time.time() - start_time, caserunname))
+                logger.info("PREPROCESSING DONE! --- %s seconds --- %s", time.time() - start_time, caserunname)
+                txtOut = txtOut + ("Preprocessing time {:0.2f}s;{}".format(time.time() - start_time, '\n'))
+
+                #return output to variable preprocessed data file
+                glpk_out = subprocess.run(
+                    'glpsol --check -m ' + modelfile +' -d ' + datafile_processed +' --wlp ' + lpfile, cwd=glpfolder,  capture_output=True, text=True, shell=True)
+            
+
+                #glpk_out = subprocess.run('glpsol --check -m ' + modelfile +' -d ' + datafile_processed +' --wlp ' + lpfile, cwd=cbcfolder,  capture_output=True, text=True, shell=True)
+                
+
+                #original data file without preprocessing
+                #glpk_out = subprocess.run('glpsol --check -m ' + modelfile_original +' -d ' + datafile +' --wlp ' + lpfile, cwd=glpfolder,  capture_output=True, text=True, shell=True)
+                
+                #print("CREATINON OF LP FILE DONE! --- %s seconds --- %s" % (time.time() - start_time, caserunname))
+                logger.info("CREATINON OF LP FILE DONE! --- %s seconds --- %s", time.time() - start_time, caserunname)
+                txtOut = txtOut + ("Creation of LP file time {:0.2f}s;{}".format(time.time() - start_time, '\n'))
+
+
+                ####output to logfile.txt
+                #subprocess.run('glpsol --check -m ' + modelfile +' -d ' + datafile_processed +' --wlp ' + lpfile +'>'+  logfiletxt+'2>&1', cwd=glpfolder, text=True, shell=True)
+
+                # proc = subprocess.Popen('glpsol --check -m ' + modelfile +' -d ' + datafile_processed +' --wlp ' + lpfile, cwd=glpfolder, text=True, shell=True)
+                # try:
+                #     outs, errs = proc.communicate(timeout=25)
+                # except:
+                #     proc.kill()
+                #     outs, errs = proc.communicate()
+
+                #cbc_out = subprocess.run('cbc ' + lpfile +' -presolve off -postsolve on -logLevel 3 solve -printing all -solu '  + resultfile, cwd=cbcfolder,  capture_output=True, text=True, shell=True)
+                # prin
+                cbc_out = subprocess.run('cbc ' + lpfile +' solve -printing all -solu '  + resultfile, cwd=cbcfolder,  capture_output=True, text=True, shell=True)
+                # -printing all prints all constraints to result.txt
+                #print("SOLUTION DONE! --- %s seconds --- %s" % (time.time() - start_time, caserunname))
+                logger.info("SOLUTION DONE! --- %s seconds --- %s", time.time() - start_time, caserunname)
+                txtOut = txtOut + ("Solution time {:0.2f}s;{}".format(time.time() - start_time, '\n'))
+                ####output to lg file .log i .txt with errors
+                # out = subprocess.run('cbc ' + lpfile +' solve -solu '  + resultfile +'>'+ logfile, cwd=cbcfolder,  capture_output=True, text=True, shell=True)
+                #out = subprocess.run('cbc ' + lpfile +' solve -solu '  + resultfile +'>'+ logfiletxt +'2>&1', cwd=cbcfolder,  capture_output=True, text=True, shell=True)
+                
+            #CBC or GLPK return error
+            if cbc_out.returncode != 0 or glpk_out.returncode != 0:
+                response = {
+                    "cbc_message": cbc_out.stdout,
+                    "cbc_stdmsg": cbc_out.stderr,
+                    "glpk_message": glpk_out.stdout,
+                    "glpk_stdmsg": glpk_out.stderr,
+                    "timer": "Error occured either during cration of LP file or solution! Please check CBC and GLPK logs.",
+                    "status_code": "error",
+                    "caserun": caserunname
+                }
+            else:
+                msg = cbc_out.stdout.splitlines()
+
+                statusFlag = "warning"
+                customMsg = "   "
+                if any("Optimal" in s for s in msg):
+                    matching = [s for s in msg if "Optimal" in s]
+                    customMsg = customMsg + matching[0] + " - "
+                    times = [s for s in msg if "Total time (CPU seconds):" in s]
+                    customMsg = customMsg + times[0]
+                    statusFlag = "success"
+
+                if any("infeasible" in s for s in msg):
+                    matching = [s for s in msg if "infeasible" in s]
+                    customMsg = customMsg + matching[0] + " - "
+                    times = [s for s in msg if "Total time (CPU seconds):" in s]
+                    customMsg = customMsg + times[0]
+                    statusFlag = "warning"
+
+                if any("ERROR" in s for s in msg):
+                    matching = [s for s in msg if "ERROR" in s]
+                    customMsg = customMsg + matching[0] + " - "
+                    times = [s for s in msg if "Total time (CPU seconds):" in s]
+                    customMsg = customMsg + times[0]
+                    statusFlag = "error"
+
+                if statusFlag == "success":
+                    self.generateCSVfromCBC(self.dataFile, self.resFile, self.resPath)
+                    #print("CSV DONE! --- %s seconds --- %s" % (time.time() - start_time, caserunname))
+                    logger.info("CSV DONE! --- %s seconds --- %s", time.time() - start_time, caserunname)
+                    txtOut = txtOut + ("csv files extraction time {:0.2f} s;{}".format(time.time() - start_time, '\n'))
+                    
+                    self.generateResultsViewer(caserunname)
+                    #print("PIVOT TABLE DONE! --- %s seconds --- %s" % (time.time() - start_time, caserunname))
+                    logger.info("PIVOT TABLE DONE! --- %s seconds --- %s", time.time() - start_time, caserunname)
+                    txtOut = txtOut + ("Pivot data preparation time {:0.2f}s;{}".format(time.time() - start_time, '\n'))
+                    
+
+
+                #print("MESSAGES DONE! --- %s seconds --- %s" % (time.time() - start_time, caserunname))
+                logger.info("MESSAGES DONE! --- %s seconds --- %s", time.time() - start_time, caserunname)
+                txtOut = txtOut + ("Message preparation time {:0.2f}s;{}".format(time.time() - start_time, '\n'))
+
+                response = {
+                    "cbc_message": cbc_out.stdout,
+                    "cbc_stdmsg": cbc_out.stderr,
+                    "glpk_message": glpk_out.stdout,
+                    "glpk_stdmsg": glpk_out.stderr,
+                    "timer": customMsg,
+                    "status_code": statusFlag,
+                    "caserun": caserunname
+                } 
+
+           
+            if lock is not None:
+                lock.release()
+
+            return response
+            # urllib.request.urlretrieve(self.dataFile, dataFile)
+
+        except Exception as ex:
+            print(ex) # do whatever you want for debugging.
+            logger.exception("Unhandled exception during solver execution")
+            raise    # re-raise exception.
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+    
+    @staticmethod
+    def readObjectiveConstant(glp_path):
+        """The objective's constant term, as glpsol's own format records it.
+
+        The CPLEX LP and MPS writers both drop it, so a run that solves the exported
+        matrix reports a total cost short by this much. GLPK omits the line entirely
+        when the term is zero, which is why a missing line returns 0.0 while an
+        unreadable file returns None.
+        """
+        try:
+            with open(glp_path) as handle:
+                for line in handle:
+                    if line.startswith('a 0 0 '):
+                        return float(line.split()[3])
+            return 0.0
+        except (OSError, ValueError, IndexError):
+            return None
+
+    @staticmethod
+    def dataFingerprint(data_path):
+        """Identify the data a constant was computed from."""
+        import hashlib
+        try:
+            digest = hashlib.sha256()
+            with open(data_path, 'rb') as handle:
+                for chunk in iter(lambda: handle.read(1 << 20), b''):
+                    digest.update(chunk)
+            return digest.hexdigest()
+        except OSError:
+            return None
+
+    def rememberObjectiveConstant(self, base, value):
+        """Keep the constant beside the case, tied to the data it came from."""
+        import json
+        fingerprint = self.dataFingerprint(self.dataFile_processed)
+        if value is None or fingerprint is None:
+            return
+        try:
+            Path(base, 'objective_constant.json').write_text(
+                json.dumps({'data_sha256': fingerprint, 'constant': value}))
+        except OSError:
+            pass
+
+    def recallObjectiveConstant(self, base):
+        """The constant recovered earlier for this exact data, or None.
+
+        The value is used only when the data fingerprint matches, so a constant
+        computed from different data is never applied.
+        """
+        import json
+        fingerprint = self.dataFingerprint(self.dataFile_processed)
+        if fingerprint is None:
+            return None
+        try:
+            saved = json.loads(Path(base, 'objective_constant.json').read_text())
+        except (OSError, ValueError):
+            return None
+        if saved.get('data_sha256') == fingerprint:
+            return saved.get('constant')
+        return None
+
+    def readAndDropGlpFile(self, glp_path):
+        """Read the constant, then delete the file - it is large and single-use."""
+        value = self.readObjectiveConstant(glp_path)
+        try:
+            Path(glp_path).unlink()
+        except OSError:
+            pass
+        return value
+
+    def generateCSVfromCBC(self, data_file, results_file, base_folder=os.getcwd()):
+        try:
+            #pd.options.mode.chained_assignment = None
+            #pd.options.mode.chained_assignment = None
+
+            data = {}
+            year_list = self.getYears()
+            tech_list = self.getTechNames()
+            start_year = int(year_list[0])
+
+            data = self.parseDataFile(data_file)
+
+            try:
+                os.makedirs(os.path.join(base_folder, 'csv'))
+            except FileExistsError:
+                pass
+            
+            #parsanje result.txt
+            params = []
+            df = pd.read_csv(results_file, sep='\t')            
+
+            ###################################### parse optimal value from result.txt
+            # Extract the optimal value from the header line
+            optimal_value_header = df.columns[0]
+            optimal_value = 0.0
+            if 'Optimal - objective value' in optimal_value_header:
+                # Extract the value from the header line
+                optimal_value = float(optimal_value_header.split()[-1])
+
+            # The matrix does not carry the objective's constant term, so it is added
+            # back here. Without it the reported total is short by a fixed amount.
+            constant = getattr(self, 'objectiveConstant', None)
+            if constant is not None:
+                optimal_value += constant
+
+            ov = {
+                "r": ['RE1'],
+                "ObjectiveValue": [optimal_value]
+            }
+
+            #load data into a DataFrame object:
+            dfOV = pd.DataFrame(ov)
+            dfOV.to_csv(os.path.join(base_folder, 'csv', 'ObjectiveValue.csv'), index=None)
+            ######################################## end optimal value parse    
+            #                                      
+            df.columns = ['temp']
+
+            df['temp'] = df['temp'].str.lstrip(' *\n\t')
+           
+           
+            if len(df) > 0:
+                #ovdje parsa result.txt file
+                df[['temp','value']] = df['temp'].str.split(')', n=1, expand=True)
+
+                #FutureWarning: pd.DataFrame.applymap has been deprecated. Use pd.DataFrame.map instead.
+                #df = df.applymap(lambda x: x.strip() if isinstance(x,str) else x)
+                #an element-wise map walked every cell of the frame in Python; .str.strip
+                #does the same work in one vectorised pass per column
+                df['temp'] = df['temp'].str.strip()
+                df['value'] = df['value'].str.strip()
+
+
+                #error when moved to ython 3.11, Columns must have smae length as key
+                # df['value'] = df['value'].str.split(' ', expand=True)
+                # potrebno je extract i dual values
+                #df['value'] = df['value'].str.split(' ', expand=True)[0]
+                # print(df[['temp','value']].head())
+                # print(df['temp'].loc[6853]) 
+                # print(df['value'].loc[6853]) 
+
+                #df[['primal','dual']] = df['value'].str.split('\t', expand=True)
+                df[['value','dual']] = df['value'].str.split(expand=True)
+                #print(df[['value','dual']].head())
+
+                df[['parameter','id']] = df['temp'].str.split('(', n=1, expand=True)
+                df['parameter'] = df['parameter'].str.split(' ', n=1, expand=True)[1]
+                df = df.drop('temp', axis=1)
+                df['value'] = df['value'].astype(float).round(4)
+                df['dual'] = df['dual'].astype(float).round(4)
+
+                #variables that are output form solver 19
+                params = df.parameter.unique()
+                all_params = {}
+
+                #the index string used to be split once per parameter, and every parameter
+                #scanned the whole frame for its own rows. Both are done once here: one
+                #split of all indices, and one grouping pass giving each parameter's rows.
+                id_parts = df['id'].str.split(',', expand=True)
+                positions = df.groupby('parameter', sort=False).indices
+
+                for each in params:
+                    ## ovajd dio radi ako u VARIABLES_C stavimo i DUALS
+                    # if each in Config.VARIABLES_C:
+
+                    #     result_cols = []
+                    #     df_p = df[df.parameter == each].copy()
+                    #     df_p[Config.VARIABLES_C[each]] = df_p['id'].str.split(',',expand=True)
+                    #     result_cols = Config.VARIABLES_C[each].copy()
+
+                    #     if each in Config.DUALS.keys():
+                    #         result_cols.append('dual')
+                    #     else:
+                    #         result_cols.append('value')
+
+                    #     df_p = df_p[result_cols] # Reorder dataframe to include 'value' as last column
+                    #     all_params[each] = pd.DataFrame(df_p) # Create a dataframe for each parameter
+
+                    #     #napravi csv
+                    #     if each in Config.DUALS.keys():
+                    #         all_params[each] = all_params[each].rename(columns={'dual':each})
+                    #     else:
+                    #         all_params[each] = all_params[each].rename(columns={'value':each})
+                    #         all_params[each].to_csv(os.path.join(base_folder, 'csv', each+'.csv'), index=None)
+
+
+                    ###### da li da razdvojimo VARIABLES_C i DUALS????
+
+                  
+                    if each in self.VAR_BY_NAME: #and each not in Config.DUALS.keys():
+                        # print(json.dumps(self.VAR_BY_NAME[each], indent=4))
+                        result_cols = []
+
+                        rows = positions[each]
+                        df_p = df.take(rows)
+
+                        # print(f"Processing parameter: {each}")
+                        # print(Config.VARIABLES_C[each])
+                        # print(self.VAR_BY_NAME[each]["setrelation"])
+                        setCols = self.VAR_BY_NAME[each]["setrelation"]
+                        df_p[setCols] = id_parts.take(rows).iloc[:, :len(setCols)].values
+
+                        result_cols = self.VAR_BY_NAME[each]["setrelation"].copy()
+                        result_cols.append('value')
+
+                        df_p = df_p[result_cols] # Reorder dataframe to include 'value' as last column
+                        all_params[each] = pd.DataFrame(df_p) # Create a dataframe for each parameter
+                        all_params[each] = all_params[each].rename(columns={'value':each})
+                        all_params[each].to_csv(os.path.join(base_folder, 'csv', each+'.csv'), index=None)
+
+                    if each in self.DUALS_BY_NAME.keys():
+                        result_cols = []
+
+                        rows = positions[each]
+                        df_p = df.take(rows)
+                        setCols = self.DUALS_BY_NAME[each]["setrelation"]
+                        df_p[setCols] = id_parts.take(rows).iloc[:, :len(setCols)].values
+
+                        result_cols = self.DUALS_BY_NAME[each]["setrelation"].copy()
+                        result_cols.append('dual')
+         
+                        df_p = df_p[result_cols] # Reorder dataframe to include 'value' as last column
+                        all_params[each] = pd.DataFrame(df_p) # Create a dataframe for each parameter
+
+                        all_params[each] = all_params[each].rename(columns={'dual':each})
+
+
+                ########################################Vars koje se izracunavaju u ovoj script nisu izlaz iz solvera###########
+                ################################################################################################################
+                #duals
+                for dual in self.DUALS_BY_NAME.keys():
+                    # if 'EBb4_EnergyBalanceEachYear4_ICR' in all_params:
+                    #     df_DR = pd.DataFrame(data['DiscountRate'], columns=Config.PARAMETERS_C_full['DiscountRate'])
+                    #     df_DR['DiscountRate'] = df_DR['DiscountRate'].astype(float)
+                    #     df_EB = all_params['EBb4_EnergyBalanceEachYear4_ICR']
+                    #     df_EB['y'] = df_EB['y'].astype(int)
+                    #     df_EB_d = pd.merge(df_EB, df_DR, on=['r'], how='outer')
+                    #     df_EB_d['EBb4_EnergyBalanceEachYear4_ICR'] = df_EB_d['EBb4_EnergyBalanceEachYear4_ICR'] * pow((1 + df_EB_d['DiscountRate']), df_EB_d['y'] - start_year + 0.5)
+                    #     df_EB_d.to_csv(os.path.join(base_folder, 'csv', 'EBb4_EnergyBalanceEachYear4_ICR.csv'), index=None)
+                    if dual in all_params:
+                        df_DR = pd.DataFrame(data['DiscountRate'], columns=Config.PARAMETERS_C_full['DiscountRate'])
+                        df_DR['DiscountRate'] = df_DR['DiscountRate'].astype(float)
+                        df_EB = all_params[dual]
+                        df_EB['y'] = df_EB['y'].astype(int)
+                        df_EB_d = pd.merge(df_EB, df_DR, on=['r'], how='outer')
+                        df_EB_d[dual] = df_EB_d[dual] * pow((1 + df_EB_d['DiscountRate']), df_EB_d['y'] - start_year + 0.5)
+                        df_EB_d.to_csv(os.path.join(base_folder, 'csv', dual+'.csv'), index=None)
+
+                if 'AccumulatedNewStorageCapacity' in all_params:
+                    df_ANSC = all_params['AccumulatedNewStorageCapacity'].rename(columns={'value':'AccumulatedNewStorageCapacity'})
+                    df_RSC = pd.DataFrame(data['ResidualStorageCapacity'], columns=Config.PARAMETERS_C_full['ResidualStorageCapacity'])
+                    df_RSC['ResidualStorageCapacity'] = df_RSC['ResidualStorageCapacity'].astype(float)
+
+                    # print('AccumulatedNewStorageCapacity')
+                    # print(df_ANSC.head())
+                    # print('ResidualStorageCapacity')
+                    # print(df_RSC.head())
+
+                    df_TSC_tmp =  pd.merge(df_ANSC, df_RSC, on=['y', 's'] ,  how='outer')
+                    df_TSC_tmp['ResidualStorageCapacity'] = df_TSC_tmp['ResidualStorageCapacity'].fillna(0)
+                    df_TSC_tmp['TotalStorageCapacity'] = df_TSC_tmp['AccumulatedNewStorageCapacity'] + df_TSC_tmp['ResidualStorageCapacity']
+                    df_TSC_tmp.sort_values(['s','y'], inplace=True)
+                    
+                    # print('TotalStorageCapacity')
+                    # print(df_TSC_tmp.head())
+
+                    df_TSC = df_TSC_tmp[['s','y','TotalStorageCapacity']]
+                    df_TSC = df_TSC[df_TSC['TotalStorageCapacity']!=0]
+                    df_TSC.to_csv(os.path.join(base_folder, 'csv', 'TotalStorageCapacity.csv'), index=None)
+            
+                if 'RateOfActivity' in all_params:
+                    #year split data frame
+                    df_yearsplit = pd.DataFrame(data['YearSplit'], columns=['r','y', 'l','YearSplit'])
+                    df_activity = all_params['RateOfActivity'].rename(columns={'value':'RateOfActivity'})
+
+                    # df_output = pd.DataFrame(data['OutputActivityRatio'], columns=['r','f','t','y','m','OutputActivityRatio'])
+                    df_output = pd.DataFrame(data['OutputActivityRatio'], columns=Config.PARAMETERS_C_full['OutputActivityRatio'])
+                    df_out_ys = pd.merge(df_output, df_yearsplit, on='y')
+                    df_out_ys['OutputActivityRatio'] = df_out_ys['OutputActivityRatio'].astype(float)
+                    df_out_ys['YearSplit'] = df_out_ys['YearSplit'].astype(float)
+                    
+                    # df_input = pd.DataFrame(data['InputActivityRatio'], columns=['r', 'f','t','y','m','InputActivityRatio'])
+                    df_input = pd.DataFrame(data['InputActivityRatio'], columns=Config.PARAMETERS_C_full['InputActivityRatio'])
+                    df_in_ys = pd.merge(df_input, df_yearsplit, on='y')
+                    df_in_ys['InputActivityRatio'] = df_in_ys['InputActivityRatio'].astype(float)
+                    df_in_ys['YearSplit'] = df_in_ys['YearSplit'].astype(float)
+                    
+                    # df_emi = pd.DataFrame(data['EmissionActivityRatio'], columns=['r', 'e','t','y','m','EmissionActivityRatio'])
+                    df_emi = pd.DataFrame(data['EmissionActivityRatio'], columns=Config.PARAMETERS_C_full['EmissionActivityRatio'])
+                    df_emi['EmissionActivityRatio'] = df_emi['EmissionActivityRatio'].astype(float)
+                    #df_emi.to_csv(os.path.join(base_folder, 'emi_table.csv'), index=None)
+
+                    #########################################Demand#################################################################
+                    #SpecifiedAnnualDemand[r,f,y]*SpecifiedDemandProfile[r,f,l,y]+ AccumulatedAnnualDemand[r,f,y]
+                    # df_sad = data['SpecifiedAnnualDemand'].rename(columns={'value':'SpecifiedAnnualDemand'})
+                    # df_sdp = data['SpecifiedDemandProfile'].rename(columns={'value':'SpecifiedDemandProfile'})
+                    # df_aad = data['AccumulatedAnnualDemand'].rename(columns={'value':'AccumulatedAnnualDemand'})
+
+                    if not df_out_ys.empty:
+                        ########################################ProductionByTechnologyByMode############################################
+                        df_prod = pd.merge(df_out_ys, df_activity, how='left', on=['t','m','l','y'])
+                        region = [x for x in list(df_prod.r.unique()) if str(x) != 'nan']
+                        df_prod['r'] = str(region[0])
+                        #df_prod['RateOfActivity'].fillna(0, inplace=True)
+                        df_prod["RateOfActivity"] = df_prod["RateOfActivity"].fillna(0)
+                        df_prod['ProductionByTechnologyByMode'] = df_prod['OutputActivityRatio']*df_prod['YearSplit']*df_prod['RateOfActivity']
+                        df_prod = df_prod.drop(['OutputActivityRatio','YearSplit','RateOfActivity'], axis=1)
+                        df_prod['ProductionByTechnologyByMode'] = df_prod['ProductionByTechnologyByMode'].astype(float).round(4)
+                        df_prod = df_prod.sort_values(by=['r','l','t','f','y'])
+                        df_prod = df_prod[df_prod['ProductionByTechnologyByMode']!=0]
+                        df_prod.to_csv(os.path.join(base_folder, 'csv', 'ProductionByTechnologyByMode.csv'), index=None)
+
+                        ########################################################INDICATOR#####################################################
+                        #############################################
+                        # IND_CommodityIntensity (po TECHNOLOGY, sa user filterom)
+                        # Intensity(t,y) = sum_f,m,l ProductionByTechnologyByMode(t,*,*,y) / sum_m,l RateOfActivity(t,*,*,y)
+                        # Računa se SAMO za tehnologije iz 'technology_list'
+                        #############################################
+                        try:
+                            for indId, indObj in self.IND_BY_NAME.items():
+                                # <<< KORISNIČKA LISTA TEHNOLOGIJA >>>
+                                # Primjer: tehnologije koje korisnik želi u indikatoru
+                                # (možeš ovo zamijeniti čitanjem iz konfiguracije/GUI/CLI)
+                                
+                                # technology_list = ['LNDMAIIRR', 'LNDMAIRNF']  # <-- OVDJE unesite željene tehnologije
+                                technology_list = indObj.get("Techs", [])  # <-- OVDJE unesite željene tehnologije
+                                indicatorId = indObj.get("id", "UnknownIndicator")
+                                indicatorTypeName = indObj.get("indicator_type", {}).get("name", "UnknownType")
+
+                                dfP = df_prod.copy()      # kolone: r, l, t, f, m, y, ProductionByTechnologyByMode
+                                #dfA = df_activity.copy()  # kolone: r, l, t, m, y, RateOfActivity
+
+                                dfA = all_params['TotalAnnualTechnologyActivityByMode'].rename(columns={'value':'TotalAnnualTechnologyActivityByMode'}) # r,t,m,y
+
+                                # Ako je lista prazna ili None -> ne filtriramo (računamo za sve tehnologije)
+                                if technology_list is not None and len(technology_list) > 0:
+                                    dfP = dfP[dfP['t'].isin(technology_list)].copy()
+                                    dfA = dfA[dfA['t'].isin(technology_list)].copy()
+
+                                # Ako nakon filtera nemamo ništa, zapiši prazan CSV sa headerima radi konzistentnosti
+                                if dfP.empty or dfA.empty:
+                                    df_empty = pd.DataFrame(columns=['r','y','t','TotalProduction','TotalActivity', indicatorId])
+                                    df_empty.to_csv(os.path.join(base_folder, 'csv', f'{indicatorId}.csv'), index=False)
+                                else:
+                                    # Ensure numeric
+                                    dfP["ProductionByTechnologyByMode"] = pd.to_numeric(
+                                        dfP["ProductionByTechnologyByMode"], errors='coerce'
+                                    ).fillna(0)
+
+                                    dfA["TotalAnnualTechnologyActivityByMode"] = pd.to_numeric(
+                                        dfA["TotalAnnualTechnologyActivityByMode"], errors='coerce'
+                                    ).fillna(0)
+
+                                    # --- 1) Agregatna proizvodnja po tehnologiji (sum preko f, m, l) ---
+                                    df_prod_ann = (
+                                        dfP.groupby(['r', 'y','f'], as_index=False)
+                                        ['ProductionByTechnologyByMode']
+                                        .sum()
+                                        .rename(columns={'ProductionByTechnologyByMode': 'TotalProduction'})
+                                    )
+
+                                    # --- 2) Agregatna aktivnost po tehnologiji (sum preko m, l) ---
+                                    df_act_ann = (
+                                        dfA.groupby(['r', 'y'], as_index=False)
+                                        ['TotalAnnualTechnologyActivityByMode']
+                                        .sum()
+                                        .rename(columns={'TotalAnnualTechnologyActivityByMode': 'TotalActivity'})
+                                    )
+
+                                    # --- 3) Merge ---
+                                    df_int = pd.merge(df_prod_ann, df_act_ann, on=['r','y'], how="inner")
+
+                                    # Popuni NaN
+                                    df_int["TotalProduction"] = pd.to_numeric(df_int["TotalProduction"], errors='coerce').fillna(0.0)
+                                    df_int["TotalActivity"]   = pd.to_numeric(df_int["TotalActivity"],   errors='coerce').fillna(0.0)
+
+                                    # --- 4) Intenzitet ---
+                                    df_int[indicatorId] = 0.0
+                                    mask = df_int["TotalActivity"] != 0
+                                    df_int.loc[mask, indicatorId] = (
+                                        df_int.loc[mask, "TotalProduction"] / df_int.loc[mask, "TotalActivity"]
+                                    )
+
+                                    # --- 5) Sort i snimi ---
+                                    df_int[indicatorId] = df_int[indicatorId].astype(float).round(4)
+                                    df_int = df_int.sort_values(['r','f','y'])
+                                    df_int.to_csv(os.path.join(base_folder, 'csv', f'{indicatorId}.csv'), index=False)
+
+                        except Exception as e:
+                            print("Technology intensity (filtered) calculation error:", e)
+
+                        ########################################RateOfProductionByTechnologyByMode############################################
+                        df_ropbt = pd.merge(df_out_ys, df_activity, how='left', on=['t','m','l','y'])
+                        region = [x for x in list(df_ropbt.r.unique()) if str(x) != 'nan']
+                        df_ropbt['r'] = str(region[0])
+                        #df_ropbt['RateOfActivity'].fillna(0, inplace=True)
+                        df_ropbt["RateOfActivity"] = df_ropbt["RateOfActivity"].fillna(0)
+
+                        df_ropbt['RateOfProductionByTechnologyByMode'] = df_ropbt['OutputActivityRatio']*df_ropbt['RateOfActivity']
+                        df_ropbt = df_ropbt.drop(['OutputActivityRatio','YearSplit','RateOfActivity'], axis=1)
+                        df_ropbt['RateOfProductionByTechnologyByMode'] = df_ropbt['RateOfProductionByTechnologyByMode'].astype(float).round(4)
+                        df_ropbt = df_ropbt.sort_values(by=['r','l','t','f','y'])
+                        df_ropbt = df_ropbt[df_ropbt['RateOfProductionByTechnologyByMode']!=0]
+                        df_ropbt.to_csv(os.path.join(base_folder, 'csv', 'RateOfProductionByTechnologyByMode.csv'), index=None)
+
+                    
+
+                    if not df_in_ys.empty:
+                        ######################################UseByTechnologyByMode##############################################
+                        df_use = pd.merge(df_in_ys, df_activity, how='left', on=['t','m','l','y'])
+                        region = [x for x in list(df_use.r.unique()) if str(x) != 'nan']
+                        df_use['r'] = str(region[0])
+                        #df_use['RateOfActivity'].fillna(0, inplace=True)
+                        df_use["RateOfActivity"] = df_use["RateOfActivity"].fillna(0)
+            
+                        df_use['UseByTechnologyByMode'] = df_use['InputActivityRatio']*df_use['YearSplit']*df_use['RateOfActivity']
+                        df_use = df_use.drop(['InputActivityRatio','YearSplit','RateOfActivity'], axis=1)
+                        df_use['UseByTechnologyByMode'] = df_use['UseByTechnologyByMode'].astype(float).round(4)
+                        df_use = df_use.sort_values(by=['r','l','t','f','y'])
+                        df_use = df_use[df_use['UseByTechnologyByMode']!=0]
+                        df_use.to_csv(os.path.join(base_folder, 'csv', 'UseByTechnologyByMode.csv'), index=None)
+
+                        ######################################RateOfUseByTechnologyByMode##############################################
+                        df_roubt = pd.merge(df_in_ys, df_activity, how='left', on=['t','m','l','y'])
+                        region = [x for x in list(df_roubt.r.unique()) if str(x) != 'nan']
+                        df_roubt['r'] = str(region[0])
+                        #df_roubt['RateOfActivity'].fillna(0, inplace=True)
+                        df_roubt["RateOfActivity"] = df_roubt["RateOfActivity"].fillna(0)
+            
+                        df_roubt['RateOfUseByTechnologyByMode'] = df_roubt['InputActivityRatio']*df_roubt['RateOfActivity']
+                        df_roubt = df_roubt.drop(['InputActivityRatio','YearSplit','RateOfActivity'], axis=1)
+                        df_roubt['RateOfUseByTechnologyByMode'] = df_roubt['RateOfUseByTechnologyByMode'].astype(float).round(4)
+                        df_roubt = df_roubt.sort_values(by=['r','l','t','f','y'])
+                        df_roubt = df_roubt[df_roubt['RateOfUseByTechnologyByMode']!=0]
+                        df_roubt.to_csv(os.path.join(base_folder, 'csv', 'RateOfUseByTechnologyByMode.csv'), index=None)
+
+                if 'CapitalInvestment' in all_params:
+                    #########################################AnnualizedInvestmentCost################################################
+                    df_OL = pd.DataFrame(data['OperationalLife'], columns=Config.PARAMETERS_C_full['OperationalLife'])
+                    df_OL['OperationalLife'] = df_OL['OperationalLife'].astype(int)
+                    df_DRi = pd.DataFrame(data['DiscountRateIdv'], columns=Config.PARAMETERS_C_full['DiscountRateIdv'])
+                    df_DRi['DiscountRateIdv'] = df_DRi['DiscountRateIdv'].astype(float)
+                    df_CRF = pd.merge(df_DRi, df_OL, on=['r', 't'])
+                    df_CRF['CRF'] = (1 - pow( (1+df_CRF['DiscountRateIdv']), -1) ) / (1 - pow( (1+df_CRF['DiscountRateIdv']), -df_CRF['OperationalLife'] ) )
+
+                    df_CI = all_params['CapitalInvestment']
+                    full_df = pd.DataFrame([(i, s) for i in tech_list for s in year_list], columns=['t', 'y'])
+    
+                    df_ACI_temp = pd.merge(df_CI, full_df, on=['t','y'],  how='outer')
+                    df_ACI_temp['CapitalInvestment'] = df_ACI_temp['CapitalInvestment'].fillna(0)
+                    df_ACI_temp['r'] = df_ACI_temp['r'].fillna('RE1')
+                    df_ACI_temp = pd.merge(df_ACI_temp, df_CRF, on=['r', 't'],  how='outer')
+                    df_ACI_temp['CIxCRF'] = df_ACI_temp['CapitalInvestment'] * df_ACI_temp['CRF']
+                    df_ACI_temp.sort_values(['t','y'], inplace=True)
+                    tech_current = ''
+                    cumulativeList = []
+                    for index, row in df_ACI_temp.iterrows():
+                        if tech_current != row['t']:
+                            cumulativeList = []
+                        cumulativeList.append(row['CIxCRF'])
+                        df_ACI_temp.loc[index,'AnnualizedInvestmentCost'] = sum(cumulativeList[-row['OperationalLife']:])
+                        tech_current = row['t']
+                        # if int(start_year) + row['OperationalLife'] <= int(row['y']) or tech_current != row['t']:
+                        #     Sum = 0
+                        # Sum += row['CIxCRF']
+                        # df_ACI_temp.loc[index,'AnnualizedInvestmentCost'] = Sum
+                        # tech_current = row['t']
+
+                    df_ACI = df_ACI_temp[['r','t','y','AnnualizedInvestmentCost']]
+                    df_ACI = df_ACI[df_ACI['AnnualizedInvestmentCost']!=0]
+                    df_ACI.to_csv(os.path.join(base_folder, 'csv', 'AnnualizedInvestmentCost.csv'), index=None)
+
+        except (IOError, OSError, IndexError) as ex:
+            # log and re-raise or wrap
+            raise
+        except Exception as ex:
+            # unexpected
+            raise
+
+    
+    def generateResultsViewer(self, caserunname):
+        try:
+            csvFolderPath = Path(Config.DATA_STORAGE,self.case,'res',caserunname, 'csv')
+
+            #CSV
+            csvs = [f.name for f in os.scandir(csvFolderPath) ]
+
+            # paramByName = self.VAR_BY_NAME
+            # indById = self.IND_BY_NAME
+            paramByName = { **self.VAR_BY_NAME, **self.DUALS_BY_NAME,  **self.IND_BY_NAME }
+
+            # DATA = {}
+            #Each group file used to be read from disk, rewritten and re-read once per
+            #parameter. viewCache holds each group's data for the whole run and viewDirty
+            #collects the files to write; each one is written once, at the end.
+            viewCache = {}
+            viewDirty = {}
+            for csv in csvs:
+                #read csv file
+                csv_path = Path(Config.DATA_STORAGE,self.case,'res', caserunname, 'csv', csv)
+                if csv_path.is_file():
+                    df = pd.read_csv(csv_path)
+                    #without indent=2 the intermediate JSON text is a fraction of the size,
+                    #and both writing and re-parsing it get correspondingly cheaper
+                    data = df.to_json(orient='records')
+                    jsondata = json.loads(data)
+
+                    if len(jsondata) != 0:
+                        for param, paramobj in paramByName.items():
+
+                            if param in jsondata[0]:
+
+                                groupKey = paramobj['group']
+                                if groupKey in viewCache:
+                                    viewData = viewCache[groupKey]
+                                else:
+                                    viewGroupPath = Path(Config.DATA_STORAGE,self.case,'view', groupKey + '.json')
+                                    if viewGroupPath.is_file():
+                                        viewData = File.readFile(viewGroupPath)
+                                    else:
+                                        viewData = {}
+                                    viewCache[groupKey] = viewData
+
+                                if paramobj['id'] not in viewData:
+                                    viewData[paramobj['id']] = {}
+
+                                # if caserunname not in viewData[paramobj['id']]:
+                                #     viewData[paramobj['id']][caserunname] = []
+
+                                #ovdje uvijek moramo napraviti novi niy jer je novi caserun i novi podaci
+                                viewData[paramobj['id']][caserunname] = []
+
+                                if paramobj['group'] == 'R':
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        tmp['ObjectiveValue'] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData
+
+                                if paramobj['group'] == 'RT':
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        tmp[ obj['t']] =obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData
+
+                                if paramobj['group'] == 'RY':
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        tmp[ obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData
+
+                                if paramobj['group'] == 'RYT':
+                                    tech = jsondata[0]['t']
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        if tech == obj['t']:
+                                            tmp['Tech'] = obj['t']
+                                            tmp[obj['y']] = obj[param]
+                                        else:
+                                            tech = obj['t']
+                                            viewData[paramobj['id']][caserunname].append(tmp)
+                                            tmp = {}
+                                            tmp['Tech'] = obj['t']
+                                            tmp[obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData  
+
+                                if paramobj['group'] == 'RYCn':
+                                    con = jsondata[0]['cn']
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        if con == obj['cn']:
+                                            tmp['Con'] = obj['cn']
+                                            tmp[obj['y']] = obj[param]
+                                        else:
+                                            con = obj['cn']
+                                            viewData[paramobj['id']][caserunname].append(tmp)
+                                            tmp = {}
+                                            tmp['Con'] = obj['cn']
+                                            tmp[obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData  
+
+                                if paramobj['group'] == 'RYC':
+                                    comm = jsondata[0]['f']
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        if comm == obj['f']:
+                                            tmp['Comm'] = obj['f']
+                                            tmp[obj['y']] = obj[param]
+                                        else:
+                                            comm = obj['f']
+                                            viewData[paramobj['id']][caserunname].append(tmp)
+                                            tmp = {}
+                                            tmp['Comm'] = obj['f']
+                                            tmp[obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData 
+
+                                if paramobj['group'] == 'RYE':
+                                    emi = jsondata[0]['e']
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        if emi == obj['e']:
+                                            tmp['Emi'] = obj['e']
+                                            tmp[obj['y']] = obj[param]
+                                        else:
+                                            emi = obj['e']
+                                            viewData[paramobj['id']][caserunname].append(tmp)
+                                            tmp = {}
+                                            tmp['Emi'] = obj['e']
+                                            tmp[obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData  
+
+                                if paramobj['group'] == 'RYS':
+                                    stg = jsondata[0]['s']
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        if stg == obj['s']:
+                                            tmp['Stg'] = obj['s']
+                                            tmp[obj['y']] = obj[param]
+                                        else:
+                                            stg = obj['s']
+                                            viewData[paramobj['id']][caserunname].append(tmp)
+                                            tmp = {}
+                                            tmp['Stg'] = obj['s']
+                                            tmp[obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData 
+
+                                if paramobj['group'] == 'RYTM':
+                                    tech = jsondata[0]['t']
+                                    mod = jsondata[0]['m']
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        if tech == obj['t'] and mod == obj['m']:
+                                            tmp['Tech'] = obj['t']
+                                            tmp['MoId'] = obj['m']
+                                            tmp[obj['y']] = obj[param]
+                                        else:
+                                            tech = obj['t']
+                                            mod = obj['m']
+                                            viewData[paramobj['id']][caserunname].append(tmp)
+                                            tmp = {}
+                                            tmp['Tech'] = obj['t']
+                                            tmp['MoId'] = obj['m']
+                                            tmp[obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData
+
+                                if paramobj['group'] == 'RYTC':
+                                    tech = jsondata[0]['t']
+                                    comm = jsondata[0]['f']
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        if tech == obj['t'] and comm == obj['f']:
+                                            tmp['Tech'] = obj['t']
+                                            tmp['Comm'] = obj['f']
+                                            tmp[obj['y']] = obj[param]
+                                        else:
+                                            tech = obj['t']
+                                            comm = obj['f']
+                                            viewData[paramobj['id']][caserunname].append(tmp)
+                                            tmp = {}
+                                            tmp['Tech'] = obj['t']
+                                            tmp['Comm'] = obj['f']
+                                            tmp[obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData
+
+                                if paramobj['group'] == 'RYTE':
+                                    tech = jsondata[0]['t']
+                                    emi = jsondata[0]['e']
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        if tech == obj['t'] and emi == obj['e']:
+                                            tmp['Tech'] = obj['t']
+                                            tmp['Emi'] = obj['e']
+                                            tmp[obj['y']] = obj[param]
+                                        else:
+                                            tech = obj['t']
+                                            emi = obj['e']
+                                            viewData[paramobj['id']][caserunname].append(tmp)
+                                            tmp = {}
+                                            tmp['Tech'] = obj['t']
+                                            tmp['Emi'] = obj['e']
+                                            tmp[obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData
+
+                                if paramobj['group'] == 'RYTTs':
+                                    tech = jsondata[0]['t']
+                                    ts = jsondata[0]['l']
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        if tech == obj['t'] and ts == obj['l']:
+                                            tmp['Tech'] = obj['t']
+                                            tmp['Ts'] = obj['l']
+                                            tmp[obj['y']] = obj[param]
+                                        else:
+                                            tech = obj['t']
+                                            ts = obj['l']
+                                            viewData[paramobj['id']][caserunname].append(tmp)
+                                            tmp = {}
+                                            tmp['Tech'] = obj['t']
+                                            tmp['Ts'] = obj['l']
+                                            tmp[obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData
+
+                                if paramobj['group'] == 'RYCTs':
+                                    comm = jsondata[0]['f']
+                                    ts = jsondata[0]['l']
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        if comm == obj['f'] and ts == obj['l']:
+                                            tmp['Comm'] = obj['f']
+                                            tmp['Ts'] = obj['l']
+                                            tmp[obj['y']] = obj[param]
+                                        else:
+                                            comm = obj['f']
+                                            ts = obj['l']
+                                            viewData[paramobj['id']][caserunname].append(tmp)
+                                            tmp = {}
+                                            tmp['Comm'] = obj['f']
+                                            tmp['Ts'] = obj['l']
+                                            tmp[obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData
+
+                                if paramobj['group'] == 'RYTEM':
+                                    tech = jsondata[0]['t']
+                                    emi = jsondata[0]['e']
+                                    mod = jsondata[0]['m']
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        if tech == obj['t'] and emi == obj['e'] and mod == obj['m']:
+                                            tmp['Tech'] = obj['t']
+                                            tmp['Emi'] = obj['e']
+                                            tmp['MoId'] = obj['m']
+                                            tmp[obj['y']] = obj[param]
+                                        else:
+                                            tech = obj['t']
+                                            emi = obj['e']
+                                            mod = obj['m']
+                                            viewData[paramobj['id']][caserunname].append(tmp)
+                                            tmp = {}
+                                            tmp['Tech'] = obj['t']
+                                            tmp['Emi'] = obj['e']
+                                            tmp['MoId'] = obj['m']
+                                            tmp[obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData
+
+                                if paramobj['group'] == 'RYTCTs':
+                                    tech = jsondata[0]['t']
+                                    comm = jsondata[0]['f']
+                                    ts = jsondata[0]['l']
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        if tech == obj['t'] and comm == obj['f'] and ts == obj['l']:
+                                            tmp['Tech'] = obj['t']
+                                            tmp['Comm'] = obj['f']
+                                            tmp['Ts'] = obj['l']
+                                            tmp[obj['y']] = obj[param]
+                                        else:
+                                            tech = obj['t']
+                                            comm = obj['f']
+                                            ts = obj['l']
+                                            viewData[paramobj['id']][caserunname].append(tmp)
+                                            tmp = {}
+                                            tmp['Tech'] = obj['t']
+                                            tmp['Comm'] = obj['f']
+                                            tmp['Ts'] = obj['l']
+                                            tmp[obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData
+
+                                # ne postoje vise varijable za ovaj dio Production By tecnology, Use By technology
+                                if paramobj['group'] == 'RYTMTs':
+                                    tech = jsondata[0]['t']
+                                    mod = jsondata[0]['m']
+                                    ts = jsondata[0]['l']
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        if tech == obj['t'] and mod == obj['m'] and ts == obj['l']:
+                                            tmp['Tech'] = obj['t']
+                                            tmp['MoId'] = obj['m']
+                                            tmp['Ts'] = obj['l']
+                                            tmp[obj['y']] = obj[param]
+                                        else:
+                                            tech = obj['t']
+                                            mod = obj['m']
+                                            ts = obj['l'] 
+                                            viewData[paramobj['id']][caserunname].append(tmp)
+                                            tmp = {}
+                                            tmp['Tech'] = obj['t']
+                                            tmp['MoId'] = obj['m']
+                                            tmp['Ts'] = obj['l']
+                                            tmp[obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData
+                            
+                                # ne koristi se jer smo izbrisali variajablu ROUBTBM Rate Of Use By Technology By Mode
+                                #ponovo koristimo jer korisitmo Production By Technology by Mode, Use By Technology By Mode (isto i sa Rate of...)
+                                if paramobj['group'] == 'RYTCMTs':
+                                    tech = jsondata[0]['t']
+                                    comm = jsondata[0]['f']
+                                    mod = jsondata[0]['m']
+                                    ts = jsondata[0]['l']
+                                    tmp = {}
+                                    for obj in jsondata:
+                                        if tech == obj['t'] and comm == obj['f'] and mod == obj['m'] and ts == obj['l']:
+                                            tmp['Tech'] = obj['t']
+                                            tmp['Comm'] = obj['f']
+                                            tmp['MoId'] = obj['m']
+                                            tmp['Ts'] = obj['l']
+                                            tmp[obj['y']] = obj[param]
+                                        else:
+                                            tech = obj['t']
+                                            comm = obj['f']
+                                            mod = obj['m']
+                                            ts = obj['l']
+                                            viewData[paramobj['id']][caserunname].append(tmp)
+                                            tmp = {}
+                                            tmp['Tech'] = obj['t']
+                                            tmp['Comm'] = obj['f']
+                                            tmp['MoId'] = obj['m']
+                                            tmp['Ts'] = obj['l']
+                                            tmp[obj['y']] = obj[param]
+                                    viewData[paramobj['id']][caserunname].append(tmp)
+                                    path = Path(self.viewFolderPath, paramobj['group']+'.json')
+                                    viewDirty[path] = viewData
+                                
+                                break
+
+            #write each view group once, with the data accumulated from every parameter
+            for path, viewData in viewDirty.items():
+                File.writeFile( viewData, path)
+
+        except(IOError, IndexError):
+            raise IndexError
+        except OSError:
+            raise OSError
+
+
+    ############################################################################################### OBSOLETE METHODS 

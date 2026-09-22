@@ -1,0 +1,16 @@
+MUIO 5.6 - Community Edition (HiGHS)
+Modifications copyright 2026 Nour El Islam DJEDAA, CREAD (Algeria)
+
+This product is a modified version of MUIO, the Modelling User Interface for
+OSeMOSYS (https://github.com/OSeMOSYS/MUIO), licensed under the Apache License,
+Version 2.0. The modifications are listed in README.md under "Changes to MUIO".
+
+It includes the OSeMOSYS model (https://github.com/OSeMOSYS/OSeMOSYS), licensed
+under the Apache License, Version 2.0.
+
+The JavaScript libraries in WebAPP/References are included as in the upstream
+MUIO repository and remain under their respective licences.
+
+Solver programs are not part of this repository. The installer published with
+each release includes CBC, GLPK, HiGHS and mosox, each under its own licence as
+listed in README.md.

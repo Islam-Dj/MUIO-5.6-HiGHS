@@ -1,0 +1,583 @@
+<!-- <div class="row">
+    <div class="col-xs-12 col-sm-7 col-md-7 col-lg-4">
+        <h2 class="page-title txt-color-blueDark" id="osy-title"><i class="fa-fw fa fa-home"></i> Data File <span>>
+                create & edit</span></h2>
+    </div>
+    <div class="col-xs-12 col-sm-5 col-md-5 col-lg-8">
+        <ul id="sparks" class="">
+            <li class="sparks-info">
+                <h5> Selected Model: <span class="txt-color-blue" id="osy-case"></span></h5>
+            </li>
+        </ul>
+    </div>
+</div> -->
+
+
+<div class="row pt-2 mb-0">
+    <div class="col-sm-3 col-md-3 col-lg-3">
+        <ul id="sparks" class="sparks-run">
+            <li class="sparks-info" id="osy-case"> </li>
+            <li class="sparks-info" id="osy-title"> </li>
+        </ul>
+    </div>
+
+    <div class="col-sm-3 col-md-3 col-lg-3 ">           
+
+        <button id="osy-batchRun" class="btn btn-default btn-bold" style="display: none; border-radius: 10px;">
+            BATCH RUN<i class="fa fa-play fa-lg secondary ml-10"></i>
+        </button>
+        <button id="osy-generateDataFile"
+            class="btn btn-default btn-bold" style=" display: none; border-radius: 10px;">
+            Generate data File<i class="fa fa-play fa-lg fa-pulse  ml-10"></i> 
+        </button>
+        <button id="osy-run" class="btn btn-default" style="display: none; border-radius: 10px;">
+            RUN MODEL<i class="fa fa-play fa-lg danger ml-10"></i>
+        </button>
+        <select id="osy-solverSelect" class="btn btn-default btn-bold"
+            title="Optimization solver used by RUN MODEL"
+            style="display: none; border-radius: 10px; height: 34px; padding: 0 8px;">
+            <option value="cbc" selected="selected">CBC</option>
+            <option value="glpk">GLPK</option>
+            <option value="highs-exe">HiGHS (standalone)</option>
+            <option value="highs">HiGHS (highspy)</option>
+            <option value="highs-mosox">HiGHS (mosox)</option>
+        </select>
+
+        <!-- HiGHS settings: shown only while a HiGHS option is selected. Every field
+             may be left on its default, which is what the solver used before these
+             were adjustable. -->
+        <button id="osy-highsOptionsBtn" class="btn btn-default" type="button"
+            title="HiGHS settings"
+            style="display: none; border-radius: 10px; height: 34px;">
+            <i class="fa fa-cog fa-lg"></i>
+        </button>
+        <div id="osy-highsOptions" style="display: none; position: absolute; z-index: 1000;
+             margin-top: 38px; background: #fff; border: 1px solid #ccc; border-radius: 10px;
+             padding: 12px 14px; box-shadow: 0 2px 8px rgba(0,0,0,.15); min-width: 290px;">
+            <div style="font-weight: 600; margin-bottom: 8px;">HiGHS settings</div>
+            <table style="font-size: 13px; width: 100%;">
+                <tr title="Algorithm. 'choose' lets HiGHS decide.">
+                    <td style="padding: 3px 0;">Algorithm</td>
+                    <td><select id="hi-solver" class="form-control input-sm">
+                        <option value="choose" selected>choose (default)</option>
+                        <option value="simplex">simplex</option>
+                        <option value="ipm">interior point (ipm)</option>
+                        <option value="ipx">interior point (ipx)</option>
+                        <option value="qpasm">active set (qpasm)</option>
+                        <option value="hipdlp">first order (hipdlp) - approximate</option>
+                        <option value="pdlp">first order (pdlp) - approximate</option>
+                    </select></td>
+                </tr>
+                <tr title="Presolve removes redundant rows before solving. Turn off only to diagnose.">
+                    <td style="padding: 3px 0;">Presolve</td>
+                    <td><select id="hi-presolve" class="form-control input-sm">
+                        <option value="choose" selected>choose (default)</option>
+                        <option value="on">on</option>
+                        <option value="off">off</option>
+                    </select></td>
+                </tr>
+                <tr title="Use several cores.">
+                    <td style="padding: 3px 0;">Parallel</td>
+                    <td><select id="hi-parallel" class="form-control input-sm">
+                        <option value="on" selected>on (default)</option>
+                        <option value="choose">choose</option>
+                        <option value="off">off</option>
+                    </select></td>
+                </tr>
+                <tr title="0 lets HiGHS pick the number of threads.">
+                    <td style="padding: 3px 0;">Threads</td>
+                    <td><input id="hi-threads" class="form-control input-sm" type="number"
+                        min="0" max="256" step="1" placeholder="0 = automatic"></td>
+                </tr>
+                <tr title="Stop after this many seconds. Leave empty for no limit.">
+                    <td style="padding: 3px 0;">Time limit (s)</td>
+                    <td><input id="hi-time_limit" class="form-control input-sm" type="number"
+                        min="0" step="1" placeholder="no limit"></td>
+                </tr>
+                <tr title="Only used by pdlp. A smaller tolerance gives a more exact objective and takes longer.">
+                    <td style="padding: 3px 0;">PDLP tolerance</td>
+                    <td><input id="hi-pdlp_optimality_tolerance" class="form-control input-sm"
+                        type="text" placeholder="1e-7 (default)"></td>
+                </tr>
+                <tr title="Mixed integer models only: accept a solution within this relative gap, e.g. 0.01 for 1%.">
+                    <td style="padding: 3px 0;">MIP gap</td>
+                    <td><input id="hi-mip_rel_gap" class="form-control input-sm" type="number"
+                        min="0" max="1" step="0.001" placeholder="exact"></td>
+                </tr>
+            </table>
+            <div style="margin-top: 10px; text-align: right;">
+                <button id="osy-highsOptionsReset" type="button" class="btn btn-default btn-sm">Defaults</button>
+                <button id="osy-highsOptionsClose" type="button" class="btn btn-primary btn-sm">Close</button>
+            </div>
+        </div>
+
+    </div>
+    <div class="col-sm-6 col-md-6 col-lg-6">           
+        <button id="osy-logFile" class="btn btn-header pull-right" title="MUIO log file">
+            <i class="fa fa-clipboard fa-lg"></i> 
+        </button>
+        <button data-toggle="modal" data-target="#osy-ModelFileModal"
+                class="btn btn-header pull-right" title="MUIO model file">
+            <i class="fa fa-file-text-o fa-lg"></i>
+        </button>
+
+        <button id="osy-cleanUp" class="btn bbtn-header pull-right" title="MUIO clean up">
+            <i class="fa fa-recycle fa-lg danger"></i>
+        </button>      
+    </div>
+
+</div>
+
+<div id="osy-caseRun">
+    <section id="widget-grid" class="">
+        <div class="row p-0">
+            <article class="col-sm-3 col-md-3 col-lg-3 p-0">
+
+
+                <div class="jarviswidget" id="osy-caseDataDiv" data-widget-colorbutton="false"
+                    data-widget-editbutton="false" data-widget-custombutton="false" data-widget-deletebutton="false">
+                    <header>
+                        <span class="widget-icon"> <i class="fa fa-edit"></i> </span>
+                        <h2> Case data </h2>
+                    </header>
+                    <div>
+                        <div class="widget-body">
+                            <div class="smart-form">
+                                <fieldset style="padding-top: 2px;">
+                                    <div class="row no-gutter">
+                                        <div class="col col-8"></div>
+                                        <div class="col col-4">
+                                            <button class="btn btn-white btn-default btn-bold btn-block"
+                                                id="osy-newCaseRun" style=" display: none;">
+                                                <i class="ace-icon fa fa-plus fa-lg default"></i>
+                                                New case
+                                            </button>
+                                        </div>
+
+                                    </div>
+                                    <br />
+                                    <!-- 
+                                    <hr><br /> -->
+                                    <div class="row no-gutter">
+                                        <section class="col col-8">
+
+                                            <label class="label">Case name</label>
+                                            <label class="input">
+                                                <input type="text" placeholder="casename" name="osy-casename"
+                                                    id="osy-casename">
+                                            </label>
+                                            <div class="note">
+                                                <strong>!@#$%^&*()</strong> are not allowed in model name!
+                                            </div>
+                                        </section>
+                                        <section class="col col-4">
+                                            <label class="label">Scenarios</label>
+                                            <a data-toggle="modal" id='osy-btnScOrder' href="#osy-order"
+                                                class="btn btn-white btn-default btn-block">
+                                                <i class="fa fa-sort fa-lg default"></i> Scenarios
+                                            </a>
+                                            </label>
+                                        </section>
+                                        <section class="col-md-12">
+                                            <label class="label">Case description</label>
+                                            <label class="textarea">
+                                                <textarea rows="4" class="custom-scroll" name="osy-desc"
+                                                    id="osy-desc"></textarea>
+                                            </label>
+                                            <div class="note">
+                                                <strong>Note:</strong> description is not required field.
+                                            </div>
+                                        </section>
+
+                                    </div>
+                                </fieldset>
+                            </div>
+
+                            <!-- <footer> -->
+                            <div class="row no-gutter">
+
+                                <div class="col-lg-offset-8 col-lg-4 col-md-offset-8 col-md-4">
+                                    <button id="osy-createCaseRun" class="btn btn-white btn-default btn-bold btn-block">
+                                        <i class="fa fa-save fa-lg default"></i> Create case
+                                    </button>
+                                </div>
+                                <div class="col-lg-offset-8 col-lg-4 col-md-offset-8 col-md-4">
+                                    <button id="osy-updateCaseRun" class="btn btn-white btn-default btn-bold btn-block"
+                                        style="display: none;">
+                                        <i class="fa fa-save fa-lg default"></i> Update case
+                                    </button>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+
+                <!-- <div class="jarviswidget" id="osy-runCaseDiv" style="display: none;" data-widget-colorbutton="false"
+                    data-widget-editbutton="false" data-widget-togglebutton="false" data-widget-deletebutton="false"
+                    data-widget-fullscreenbutton="false" data-widget-custombutton="false" data-widget-collapsed="false"
+                    data-widget-sortable="false">
+                    <header style="color: #d9534f; ">
+                        <span class="widget-icon"> <i class="fa fa-play-circle text-white"></i> </span>
+                        <h2><b id="osy-caseRunName"></b> </h2>
+                    </header>
+                    <div>
+                        <div class="widget-body">
+                            <div class="row no-gutter">
+                                <div class="col-md-8">
+                                    <button id="osy-generateDataFile"
+                                        class="btn btn-white btn-default btn-bold btn-block" style=" display: none;">
+                                        <i class="fa fa-cogs fa-lg osy-second-color fa-pulse"></i> Generate data File
+                                    </button>
+                                </div>
+                                <div class="col-md-4">
+                                    <button id="osy-run" class="btn btn-white btn-default btn-bold btn-block"
+                                        style="display: none;">
+                                        <i class="fa fa-play-circle fa-lg danger"></i> RUN MODEL
+                                    </button>
+                                </div>
+                            </div>
+                            <br />
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <div class="input-group" id='osy-solver' style="display: none;">
+                                        <div class="smart-form">
+                                            <div class="inline-group">
+                                                <label class="radio">
+                                                    <input type="radio" name="solver" value="glpk"
+                                                        checked="checked"><i></i>GLPK
+                                                </label>
+                                                <label class="radio">
+                                                    <input type="radio" name="solver" value="cbc"><i></i>CBC
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div> -->
+
+
+            </article>
+
+            <article class="col-sm-9 col-md-9 col-lg-9 mt-10">
+                <div id="tabs">
+                    <ul class="nav nav-tabs in">
+                        <li class="active">
+                            <a data-toggle="tab" href="#tabCases" class='Cases'> <i class="fa fa-lg fa-cubes"></i>
+                                <span class="hidden-mobile hidden-tablet"> Cases </span>
+                            </a>
+                        </li>
+                        
+                        <li>
+                            <a data-toggle="tab" href="#tabDataFile" class="DataFile" style="display: none;"> <i
+                                    class="fa fa-lg fa-file-text"></i>
+                                <span class="hidden-mobile hidden-tablet"> Data file </span>
+                            </a>
+                        </li>
+                        <li>
+                            <a data-toggle="tab" href="#tabRunOutput" class="runOutput" style="display: none;">
+                                <i class="fa fa-lg fa-file-text-o "></i>
+                                <span class="hidden-mobile hidden-tablet"> CBC solver log </span>
+                            </a>
+                        </li>
+                        <li>
+                            <a data-toggle="tab" href="#tabLpOutput" class="lpOutput" style="display: none;">
+                                <i class="fa fa-lg fa-file-text-o "></i>
+                                <span class="hidden-mobile hidden-tablet"> LP file (GLPK) log </span>
+                            </a>
+                        </li>
+                        <li>
+                            <a data-toggle="tab" href="#tabHighsOutput" class="highsOutput" style="display: none;">
+                                <i class="fa fa-lg fa-file-text-o "></i>
+                                <span class="hidden-mobile hidden-tablet"> HiGHS solver log </span>
+                            </a>
+                        </li>
+                        <li>
+                            <a data-toggle="tab" href="#tabRunSummary" class="runSummary" style="display: none;">
+                                <i class="fa fa-lg fa-clock-o "></i>
+                                <span class="hidden-mobile hidden-tablet"> Run summary </span>
+                            </a>
+                        </li>
+                        <li>
+                            <a data-toggle="tab" href="#tabBatchLog" class="batchOutput" style="display: none;">
+                                <i class="fa fa-lg fa-file-text-o "></i>
+                                <span class="hidden-mobile hidden-tablet"> Batch run log </span>
+                            </a>
+                        </li>
+                        <li>
+                            <a data-toggle="tab" href="#tabResultsFile" class='Results' style="display: none;">
+                                <i class="fa fa-lg fa-download"></i>
+                                <span class="hidden-mobile hidden-tablet"> Results </span>
+                            </a>
+                        </li>
+
+                    </ul>
+
+                </div>
+                <div class="tab-content">
+                    <div class="tab-pane active Cases" id="tabCases">
+                        <div class="jarviswidget">
+                            <div>
+                                <div class="widget-body">
+                                    <fieldset>
+                                        <section style="overflow-x: scroll;">
+                                            <div id="osy-Cases"></div>
+                                        </section>
+                                    </fieldset>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane" id="tabDataFile">
+                        <!-- 002082 -->
+                        <div class="jarviswidget">
+                            <div>
+                                <div class="widget-body">
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <div id='osy-DataFileDownload'></div>
+                                        </div>
+                                    </div>
+                                    </br>
+                                    <fieldset>
+
+                                        <section>
+                                            <div id="osy-DataFile"></div>
+                                        </section>
+                                    </fieldset>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane " id="tabRunOutput">
+                        <div class="jarviswidget ">
+                            <div>
+                                <div class="widget-body no-padding-bottom">
+                                    <fieldset>
+                                        <section>
+                                            <div id="osy-runOutput"></div>
+                                        </section>
+                                    </fieldset>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane " id="tabLpOutput">
+                        <div class="jarviswidget ">
+                            <div>
+                                <div class="widget-body no-padding-bottom">
+                                    <fieldset>
+                                        <section>
+                                            <div id="osy-lpOutput"></div>
+                                        </section>
+                                    </fieldset>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane " id="tabRunSummary">
+                        <div class="jarviswidget ">
+                            <div>
+                                <div class="widget-body no-padding-bottom">
+                                    <fieldset>
+                                        <section>
+                                            <!-- filled after a run with the real time each stage took -->
+                                            <div id="osy-runSummary"></div>
+                                        </section>
+                                    </fieldset>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tab-pane " id="tabHighsOutput">
+                        <div class="jarviswidget ">
+                            <div>
+                                <div class="widget-body no-padding-bottom">
+                                    <fieldset>
+                                        <section>
+                                            <div id="osy-highsOutput"></div>
+                                        </section>
+                                    </fieldset>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane " id="tabBatchLog">
+                        <div class="jarviswidget ">
+                            <div>
+                                <div class="widget-body no-padding-bottom">
+                                    <fieldset>
+                                        <section>
+                                            <div id="osy-batchOutput"></div>
+                                        </section>
+                                    </fieldset>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane " id="tabResultsFile">
+                        <div class="jarviswidget ">
+                            <div>
+                                <div class="widget-body">
+                                    <fieldset>
+                                        <section id="osy-downloadResultsFile"></section>
+                                    </fieldset>
+                                    <fieldset>
+                                        <hr>
+                                        <section>
+                                            <div class="well">
+                                                <table class="table table-striped table-forum">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>
+                                                                Results CSV files
+                                                            </th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody id='csvFiles'>
+
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </section>
+                                    </fieldset>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+        </div>
+    </section>
+</div>
+
+ <!-- <div id="logBox"></div> -->
+
+<!-- Modal -->
+<div class="modal fade" id="osy-order" tabindex="-1" role="dialog">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <!-- <button type="button" class="close" data-dismiss="modal" aria-hidden="true">
+					&times;
+				</button> -->
+
+
+                <!-- <button type="button" class="btn btn-white btn-default pull-right" data-dismiss="modal">
+                    <i class="fa fa-times fa-lg" aria-hidden="true"></i> Cancel
+                </button> -->
+
+                <button type="button" class="btn btn-white btn-default pull-right" id='btnSaveOrder'>
+                    <i class="fa fa-check fa-lg"></i> Confirm
+                </button>
+
+                <button type="button" id="toggle-all"  class="btn btn-white btn-default pull-right" data-dismiss="modal">
+                    <i class="fa fa-check-square-o fa-lg osy-second-color" aria-hidden="true"></i>
+                </button>
+
+                <h4 class="modal-title">
+                    <i class="fa fa-sort osy-second-color" aria-hidden="true"></i> Scenario order
+                </h4>
+            </div>
+            <div class="modal-body smart-form" style="padding-top: 0px;">
+                <fieldset style="padding-top: 15px;">
+                    <div class="row">
+                        <div class="col-md-1"> </div>
+                        <div class="col-md-10 col-lg-10 col-md-offset-1 col-lg-offset-1 ">
+                            <div id='osy-sc0'></div>
+                            <div id='osy-scOrder'></div>
+                        </div>
+                    </div>
+                </fieldset>
+                <footer></footer>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<div class="modal fade" id="osy-validation" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-dialog-wide">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-hidden="true">
+                    &times;
+                </button>
+                <h4 class="modal-title">
+                    <i class="fa  fa-info-circle fa-lg osy-second-color" aria-hidden="true"></i> Validation output -
+                    caserun: <span id="valCasrunname"></span>
+                </h4>
+            </div>
+            <div class="modal-body" style="padding-top: 0px;">
+                <fieldset style="padding-top: 15px;">
+                    <div class="row">
+                        <div class="col-md-12 col-lg-12">
+                            <div id='valOutput'></div>
+                        </div>
+                    </div>
+                </fieldset>
+                <footer></footer>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="osy-ModelFileModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-dialog-wide">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-hidden="true">
+                    &times;
+                </button>
+                <h4 class="modal-title">
+                    <i class="fa  fa-info-circle fa-lg osy-second-color" aria-hidden="true"></i> MUIO Model File
+                </h4>
+            </div>
+            <div class="modal-body" style="padding-top: 0px;">
+                <fieldset style="padding-top: 15px;">
+                    <div class="row">
+                        <div class="col-md-12 col-lg-12">
+                            <div id='osy-ModelFile'></div>
+                        </div>
+                    </div>
+                </fieldset>
+                <footer></footer>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="osy-LogFileModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-dialog-wide">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-hidden="true">
+                    &times;
+                </button>
+                <h4 class="modal-title">
+                    <i class="fa  fa-info-circle fa-lg text-info" aria-hidden="true"></i> MUIO Log File
+                </h4>
+            </div>
+            <div class="modal-body" style="padding-top: 0px;">
+                <fieldset style="padding-top: 15px;">
+                    <div class="row">
+                        <div class="col-md-12 col-lg-12">
+                            <div id='osy-logFiletxt'></div>
+                        </div>
+                    </div>
+                </fieldset>
+                <footer></footer>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,9 +1,34 @@
-# build artefacts and installers are published as release assets, not committed
-*.exe
-!kit/solvers/*.exe
-build/
-dist/
-output/
+# Python
 __pycache__/
 *.pyc
+.env
+venv/
+
+# Logs
 *.log
+*.log.*
+
+# Solver programs are installed separately (see README)
+WebAPP/SOLVERs/*
+!WebAPP/SOLVERs/model.v.5.4.txt
+
+# Models and results stay on your own machine
+WebAPP/DataStorage/*
+!WebAPP/DataStorage/Parameters.json
+!WebAPP/DataStorage/Variables.json
+!WebAPP/DataStorage/Duals.json
+!WebAPP/DataStorage/Indicators.json
+
+# Licence keys and licensed library variants
+WebAPP/References/wijmo/licence.js
+WebAPP/References/wijmo/DistributionKey.txt
+WebAPP/References/jqwidgets/jqx-all-unlisenced.js
+WebAPP/References/jqwidgets_licenced/
+WebAPP/References/jqwidgets_free/
+WebAPP/References/wijmoFULL/
+WebAPP/References/wijmoOLD/
+
+# Installers are published as release assets
+*.exe
+/build/
+/dist/

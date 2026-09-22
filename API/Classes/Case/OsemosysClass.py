@@ -1,0 +1,1121 @@
+import os
+from pathlib import Path
+import platform
+import shutil, json
+from copy import deepcopy
+from Classes.Base import Config
+from Classes.Base.FileClass import File
+from Classes.Case.HelpersClass import Helpers
+
+class Osemosys():
+    def __init__(self, case):
+        self.case = case
+        self.storagePath = Path(Config.DATA_STORAGE)
+        self.casePath = self.storagePath / case
+
+        self.PARAMETERS = File.readParamFile(self.storagePath / 'Parameters.json')
+        self.VARIABLES = File.readParamFile(self.storagePath / 'Variables.json')
+        self.DUALS = File.readParamFile(self.storagePath / 'Duals.json')
+        self.INDICATORS = File.readParamFile(self.storagePath / 'Indicators.json')
+
+
+        self.resultsPath = self.casePath / 'res'
+        self.viewFolderPath = self.casePath / 'view'
+        self.resDataPath = self.viewFolderPath / 'resData.json'
+
+        self.genData =  File.readFile(self.casePath / 'genData.json')
+        self.customIndicators = self.genData['osy-indicators']
+        self.resData = File.readFile(self.resDataPath)
+        
+        #Case.__init__(self, case)
+
+        self.zipPath = Path(Config.DATA_STORAGE,case+'.zip')
+
+        self.rPath = self.casePath / 'R.json'
+        self.ryPath = self.casePath / 'RY.json'
+        self.rtPath = self.casePath / 'RT.json'
+        self.rePath = self.casePath / 'RE.json'
+        self.rsPath = self.casePath / 'RS.json'
+        self.rycnPath = self.casePath / 'RYCn.json'
+        self.rytPath = self.casePath / 'RYT.json'
+        self.rysPath = self.casePath / 'RYS.json'
+        self.rytcnPath = self.casePath / 'RYTCn.json'
+        self.rytmPath = self.casePath / 'RYTM.json'
+        self.rytcPath = self.casePath / 'RYTC.json'
+        self.rytcmPath = self.casePath / 'RYTCM.json'
+        self.rytsmPath = self.casePath / 'RYTSM.json'
+        self.rtsmPath = self.casePath / 'RTSM.json'
+        self.rytsPath = self.casePath / 'RYTs.json'
+        self.rydtbPath = self.casePath / 'RYDtb.json'
+        self.rysedtPath = self.casePath / 'RYSeDt.json'
+        self.rycPath = self.casePath / 'RYC.json'
+        self.ryePath = self.casePath / 'RYE.json'
+        self.ryttsPath = self.casePath / 'RYTTs.json'
+        self.ryctsPath = self.casePath / 'RYCTs.json'
+        self.rytePath = self.casePath / 'RYTE.json'
+        self.rytemPath = self.casePath / 'RYTEM.json'
+
+        self.osemosysFile = Path(Config.SOLVERs_FOLDER,'model.v.5.4.txt') 
+        self.osemosysFileOriginal = Path(Config.SOLVERs_FOLDER,'osemosys.txt')
+
+        if platform.system() == 'Windows':
+            self.glpkFolder = Path(Config.SOLVERs_FOLDER, 'GLPK')
+            self.cbcFolder  = Path(Config.SOLVERs_FOLDER, 'COIN-OR')
+            glpsol_name = "glpsol.exe"
+            cbc_name    = "cbc.exe"
+        else:
+            # macOS i Linux
+            self.glpkFolder = Path(Config.SOLVERs_FOLDER, 'GLPK')
+            self.cbcFolder  = Path(Config.SOLVERs_FOLDER, 'COIN-OR')
+            glpsol_name = "glpsol"
+            cbc_name    = "cbc"
+
+        #mosox: optional fast MathProg -> MPS translator used by the HiGHS (mosox) option
+        self.mosoxFolder = Path(Config.SOLVERs_FOLDER, 'MOSOX')
+        #standalone HiGHS executable used by the HiGHS (exe) option
+        self.highsFolder = Path(Config.SOLVERs_FOLDER, 'HIGHS')
+
+        self.glpsol_path, self.glpsol_is_bundled = self._resolve_solver_executable(self.glpkFolder, glpsol_name, platform.system())
+        self.cbc_path,    self.cbc_is_bundled    = self._resolve_solver_executable(self.cbcFolder,  cbc_name, platform.system())
+
+
+        self.PARAM = Helpers.build_param(self.PARAMETERS)
+        self.VARS  = Helpers.build_vars(self.VARIABLES)
+        self.VAR_BY_NAME = Helpers.build_var_by_name(self.VARIABLES)
+        self.IND_BY_NAME = Helpers.merge_all_indicators(self.INDICATORS, self.customIndicators, self.getTechsMap())
+        self.IND_GROUPED = Helpers.merge_all_indicators_grouped(self.INDICATORS, self.customIndicators, self.getTechsMap())
+        self.DUALS_BY_NAME = Helpers.build_var_by_name(self.DUALS)
+        
+
+        #
+        # d = {}
+        # for k, l in self.PARAMETERS.items():
+        #     tmp = {}
+        #     for de in l:
+        #         tmp[de['id']] = de['value'].replace(" ", "")
+        #     d[k] = tmp
+        # self.PARAM = d
+
+        # a=[]
+        # for k, l in self.VARIABLES.items():
+        #     for de in l:
+        #         a.append(de['name'])
+        # self.VARS = a
+
+ 
+    @staticmethod
+    def __build_param(parameters: dict) -> dict[str, dict[str, str]]:
+        d: dict[str, dict[str, str]] = {}
+        for k, lst in parameters.items():
+            tmp: dict[str, str] = {}
+            for de in lst:
+                tmp[de['id']] = str(de['value']).replace(" ", "")
+            d[k] = tmp
+        return d
+
+    @staticmethod
+    def __build_vars(variables: dict) -> list[str]:
+        names: list[str] = []
+        for _, lst in variables.items():
+            for de in lst:
+                names.append(de['name'])
+        return names
+
+
+    @staticmethod
+    def __build_var_by_name(variables: dict) -> dict:
+        out = {}
+        for group, entries in variables.items():
+            for obj in entries:
+                out[obj["name"]] = {
+                    "id": obj["id"],
+                    "group": group,
+                    "setrelation": obj.get("setrelation", [])
+                }
+        return out
+
+    @staticmethod
+    def __merge_groups(a: dict, b: dict) -> dict:
+        out = { **a }   # kopija A
+
+        for key, value in b.items():
+            if (
+                key in out and
+                isinstance(out[key], dict) and
+                isinstance(value, dict)
+            ):
+                # oba su dict → plitko spajanje pod-ključevа
+                out[key] = { **out[key], **value }
+
+            # Ako su oba liste → spoji liste
+            elif (
+                key in out and
+                isinstance(out[key], list) and
+                isinstance(value, list)
+            ):
+                out[key] = out[key] + value  # ili list(set(...)) ako želiš unikate
+
+            # Inače samo prepiši
+
+            else:
+                # key postoji samo u b → direktno dodaj
+                out[key] = value
+
+        return out
+
+    def __merge_all_indicators(self, indicator_types_json: dict, custom_indicators: list) -> dict:
+        """
+        Spaja tipove indikatora iz indicator_types_json sa custom_indicators.
+        U finalni objekat dodaje root-level 'group'.
+        indicator_type se kopira bez 'group'.
+        Ključ u finalnom dict-u je id (bivši IndicatorId).
+        """
+
+        # 1) Sakupi sve tipove indikatora iz svih grupa + group info
+        type_by_id = {}
+
+        for group_name, group_items in indicator_types_json.items():
+            if not isinstance(group_items, list):
+                continue
+
+            for item in group_items:
+                if isinstance(item, dict) and "id" in item:
+                    type_by_id[item["id"]] = { **item, "group": group_name }
+
+        # 2) Rezultat
+        result = {}
+        tech_map = self.getTechsMap()
+
+        # 3) Obrada custom indikatora
+        for item in custom_indicators:
+            if not isinstance(item, dict):
+                continue
+
+            indicator_name = item.get("Indicator")
+            indicator_id = item.get("IndicatorId")
+            indicator_type_id = item.get("IndicatorTypeId")
+
+            if not indicator_name or not indicator_type_id or not indicator_id:
+                continue
+
+            type_rec = type_by_id.get(indicator_type_id)
+            if not type_rec:
+                continue
+
+            merged = deepcopy(item)
+
+            # --- Mapiranje SETS: TECHid -> TechName ---
+            sets_ids = merged.get("Sets", [])
+            if isinstance(sets_ids, list):
+                mapped_sets = [
+                    tech_map.get(tech_id, tech_id) for tech_id in sets_ids
+                ]
+                merged["Sets"] = mapped_sets
+
+            # --- Root-level group ---
+            merged["group"] = type_rec.get("group")
+
+            # --- indicator_type bez 'group' ---
+            clean_type = {k: v for k, v in type_rec.items() if k != "group"}
+            merged["indicator_type"] = deepcopy(clean_type)
+
+            # --- Rename IndicatorId -> id ---
+            merged["id"] = indicator_id
+            if "IndicatorId" in merged:
+                del merged["IndicatorId"]
+
+            # Spremi pod ključem = id
+            result[indicator_id] = merged
+
+        return result
+
+    def __merge_all_indicators_grouped(self, indicator_types_json: dict, custom_indicators: list) -> dict:
+        """
+        Vraća strukturu grupisanu po 'group':
+        {
+            "<group>": [
+                { ... indikator ... },
+                { ... indikator ... }
+            ]
+        }
+        """
+
+        # 1) Sakupi sve tipove indikatora + group info
+        type_by_id = {}
+        for group_name, group_items in indicator_types_json.items():
+            if not isinstance(group_items, list):
+                continue
+
+            for item in group_items:
+                if isinstance(item, dict) and "id" in item:
+                    type_by_id[item["id"]] = { **item, "group": group_name }
+
+        # 2) rezultat: group -> list of objects
+        result = {}
+        tech_map = self.getTechsMap()
+
+        # 3) obrada custom indikatora
+        for item in custom_indicators:
+            if not isinstance(item, dict):
+                continue
+
+            indicator_name = item.get("Indicator")
+            indicator_id = item.get("IndicatorId")
+            indicator_type_id = item.get("IndicatorTypeId")
+
+            if not indicator_name or not indicator_id or not indicator_type_id:
+                continue
+
+            type_rec = type_by_id.get(indicator_type_id)
+            if not type_rec:
+                continue
+
+            group = type_rec["group"]
+            merged = deepcopy(item)
+
+            # Mapiranje Sets: TECHid -> TechName
+            sets_ids = merged.get("Sets", [])
+            if isinstance(sets_ids, list):
+                merged["Sets"] = [tech_map.get(t, t) for t in sets_ids]
+
+            # Root-level group
+            merged["group"] = group
+
+            # indicator_type bez 'group'
+            clean_type = {k: v for k, v in type_rec.items() if k != "group"}
+            merged["indicator_type"] = deepcopy(clean_type)
+
+            # Rename IndicatorId -> id
+            merged["id"] = indicator_id
+            if "IndicatorId" in merged:
+                del merged["IndicatorId"]
+
+            # -------------------------------
+            # UPIS: grupa -> lista objekata
+            # -------------------------------
+            if group not in result:
+                result[group] = []
+
+            result[group].append(merged)
+
+        return result
+
+
+    @staticmethod
+    def _resolve_solver_executable( folder: Path, exe_name: str, system: str):
+        # 1) Bundled
+        candidate = folder / exe_name
+        if candidate.exists():
+            if system != "Windows":
+                os.chmod(candidate, os.stat(candidate).st_mode | 0o111)
+            return str(candidate.resolve()), True  # <--- solver je bundlan
+
+        # 2) PATH
+        which = shutil.which(exe_name)
+        if which:
+            return which, False  # <--- koristi sistemski solver
+
+        # 3) macOS standard locations
+        if system == "Darwin":
+            for p in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]:
+                test = Path(p) / exe_name
+                if test.exists():
+                    return str(test), False
+
+        # 4) Linux standard locations
+        if system == "Linux":
+            for p in ["/usr/bin", "/usr/local/bin", "/bin", "/snap/bin"]:
+                test = Path(p) / exe_name
+                if test.exists():
+                    return str(test), False
+
+        raise FileNotFoundError(f"Solver not found: {exe_name}")
+
+    def getParamDefaultValues(self):
+        d = {}
+        for k, l in self.PARAMETERS.items():
+            for de in l:
+                d[de['id']] = de['default']
+        return d
+
+    def keys_exists(self, element, *keys):
+        '''
+        Check if *keys (nested) exists in `element` (dict).
+        '''
+        if not isinstance(element, dict):
+            raise AttributeError('keys_exists() expects dict as first argument.')
+        if len(keys) == 0:
+            raise AttributeError('keys_exists() expects at least two arguments, one given.')
+
+        _element = element
+        for key in keys:
+            try:
+                _element = _element[key]
+            except KeyError:
+                return False
+        return True
+        
+    def getYears(self):
+        years = self.genData['osy-years']
+        return years
+
+    def getTsIds(self):
+        tsIds = [ ts['TsId'] for ts in self.genData["osy-ts"]]
+        return tsIds
+
+    def getTsMap(self):
+        timeslices = {tech['TsId']: tech['Ts'] for tech in self.genData["osy-ts"] }
+        return timeslices
+
+    def getTsNames(self):
+        tsIds = [ ts['Ts'] for ts in self.genData["osy-ts"]]
+        return tsIds    
+
+    def getMods(self):
+        mo = int(self.genData['osy-mo'])+1
+        mods = []
+        for m in range(1, mo):
+            mods.append(m)
+        return mods 
+
+    def getTechIds(self):
+        techIds = [ tech['TechId'] for tech in self.genData["osy-tech"]]
+        return techIds
+
+    def getTechNames(self):
+        techIds = [ tech['Tech'] for tech in self.genData["osy-tech"]]
+        return techIds
+
+    def getTechs(self):
+        techs = [ {tech['TechId']:tech['Tech']} for tech in self.genData["osy-tech"]]
+        return techs
+
+    def getTechsMap(self):
+        techs = {tech['TechId']: tech['Tech'] for tech in self.genData["osy-tech"] }
+        return techs
+    
+    def getEmiIds(self):
+        emiIds = [ tech['EmisId'] for tech in self.genData["osy-emis"]]
+        return emiIds
+
+    def getEmiNames(self):
+        emiIds = [ tech['Emis'] for tech in self.genData["osy-emis"]]
+        return emiIds
+    
+    def getEmis(self):
+        emis = [ {tech['EmisId']: tech['Emis']} for tech in self.genData["osy-emis"]]
+        return emis
+
+    def getEmisMap(self):
+        emis = {tech['EmisId']: tech['Emis'] for tech in self.genData["osy-emis"] }
+        return emis
+
+    def getStgs(self):
+        stgs = [ {stg['StgId']: stg['Stg']} for stg in self.genData["osy-stg"]]
+        return stgs
+    
+    def getStgNames(self):
+        stgs = [ stg['Stg'] for stg in self.genData["osy-stg"]]
+        return stgs
+    
+    def getStgIds(self):
+        stgIds = [ stg['StgId'] for stg in self.genData["osy-stg"]]
+        return stgIds
+    
+    def getStgMap(self):
+        stgs = {stg['StgId']: stg['Stg'] for stg in self.genData["osy-stg"] }
+        return stgs
+    
+    def getStgByType(self):
+        stgByType = {}
+        for stg in self.genData["osy-stg"]:
+            if stg['Operation'] not in stgByType:
+                stgByType[stg['Operation']] = []
+            stgByType[stg['Operation']].append(stg['Stg'])
+        return stgByType
+
+    def getSeIds(self):
+        seIds = [ se['SeId'] for se in self.genData["osy-se"]]
+        return seIds
+    
+    def getSeMap(self):
+        ses = { se['SeId']: se['Se'] for se in self.genData["osy-se"] }
+        return ses
+
+    def getDtIds(self):
+        seIds = [ se['DtId'] for se in self.genData["osy-dt"]]
+        return seIds
+    
+    def getDtMap(self):
+        ses = { se['DtId']: se['Dt'] for se in self.genData["osy-dt"] }
+        return ses
+
+    def getDtbIds(self):
+        seIds = [ se['DtbId'] for se in self.genData["osy-dtb"]]
+        return seIds
+    
+    def getDtbMap(self):
+        ses = { se['DtbId']: se['Dtb'] for se in self.genData["osy-dtb"] }
+        return ses
+
+    def getCommIds(self):
+        commIds = [ tech['CommId'] for tech in self.genData["osy-comm"]]
+        return commIds
+    
+    def getCommNames(self):
+        commIds = [ tech['Comm'] for tech in self.genData["osy-comm"]]
+        return commIds
+
+    def getComms(self):
+        comms = [ {tech['CommId']: tech['Comm']} for tech in self.genData["osy-comm"]]
+        return comms
+
+    def getCommsMap(self):
+        comms = {tech['CommId']: tech['Comm'] for tech in self.genData["osy-comm"] }
+        return comms
+    
+    def getConIds(self):
+        conIds = [ tech['ConId'] for tech in self.genData["osy-constraints"]]
+        return conIds
+
+    def getConsMap(self):
+        cons = {con['ConId']: con['Con'] for con in self.genData["osy-constraints"] }
+        return cons
+
+    # def getScIds(self):
+    #     scIds = [ sc['ScenarioId'] for sc in self.genData["osy-scenarios"]]
+    #     return scIds
+
+    def getScenariosByCase(self):
+        #scIds = [ sc['ScenarioId'] for sc in self.genData["osy-scenarios"]]
+        scBycs = {}
+        for case in self.resData["osy-cases"]:
+            scBycs[case['Case']] = []
+            for sc in case['Scenarios']:
+                chunk = {}
+                chunk['ScId'] = sc['ScenarioId']
+                chunk['Sc'] = sc['Scenario']
+                chunk['Active'] = sc['Active']
+                scBycs[case['Case']].append(chunk)
+        return scBycs
+
+    def getScOrder(self, caserunname):
+        #scIds = [ {'ScId': sc['ScenarioId'], 'Sc': sc['Scenario'], 'Active': sc['Active']} for sc in self.genData["osy-scenarios"]]
+        scenarioBycase = self.getScenariosByCase()
+        scIds = scenarioBycase[caserunname]
+        return scIds
+
+    def getStorageTechIds(self):
+        techIds = {}
+        for param in self.PARAMETERS['RTSM']:
+            techIds[param['id']] = {}
+            for stg in self.genData["osy-stg"]:
+                if stg[param['id']]: 
+                    techIds[param['id']][stg['StgId']]=[]
+                    techIds[param['id']][stg['StgId']].append(stg[param['id']])
+                    # if techIds[param['id']][stg['StgId']]: 
+                    #     techIds[param['id']][stg['StgId']].append(stg[param['id']])
+                    # else:
+                    #     techIds[param['id']][stg['StgId']]=[]
+                    #     techIds[param['id']][stg['StgId']].append(stg[param['id']])
+        return techIds
+    
+    #output actTech['IAR'] = ['Tech_1', 'Tech_2'...]
+    def getActivityTechIds(self):
+        techIds = {}
+        for param in self.PARAMETERS['RYTCM']:
+            techIds[param['id']] = []
+            for tech in self.genData["osy-tech"]:
+                if tech[param['id']]: 
+                    techIds[param['id']].append(tech['TechId'])
+        return techIds
+
+    #output actTech['IAR']['Tech_1'] = ['Comm_1', 'Comm_2'...]
+    def getActivityCommIds(self):
+        commIds = {}
+        for param in self.PARAMETERS['RYTCM']:
+            commIds[param['id']] = {}
+            for tech in self.genData["osy-tech"]:
+                if tech[param['id']]: 
+                    commIds[param['id']][tech['TechId']] = tech[param['id']]
+        return commIds
+
+    #output actTech['INCR'] = ['Tech_1', 'Tech_2'...]
+    def getInputCapTechIds(self):
+        techIds = {}
+        for param in self.PARAMETERS['RYTC']:
+            techIds[param['id']] = []
+            for tech in self.genData["osy-tech"]:
+                if tech[param['id']]: 
+                    techIds[param['id']].append(tech['TechId'])
+        return techIds
+
+    #output actTech['INCR']['Tech_1'] = ['Comm_1', 'Comm_2'...]
+    def getInputCapCommIds(self):
+        commIds = {}
+        for param in self.PARAMETERS['RYTC']:
+            commIds[param['id']] = {}
+            for tech in self.genData["osy-tech"]:
+                if tech[param['id']]: 
+                    commIds[param['id']][tech['TechId']] = tech[param['id']]
+        return commIds 
+
+    def getConstraintTechIds(self):
+        techIds = {}
+        for param in self.PARAMETERS['RYTCn']:
+            techIds[param['id']] = {}
+            for con in self.genData["osy-constraints"]:
+                # if con[param['id']]: 
+                if con['CM']: 
+                    techIds[param['id']][con['ConId']] = []
+                    # for tech in con[param['id']]:
+                    for tech in con['CM']:
+                        techIds[param['id']][con['ConId']].append(tech)
+        return techIds
+
+    def getActivityEmissionTechIds(self):
+        techIds = {}
+        for param in self.PARAMETERS['RYTEM']:
+            techIds[param['id']] = []
+            for tech in self.genData["osy-tech"]:
+                #dodali smo novi paramtear pored EAR imamo i EACR, sad se uslov mora promijneniti
+                #if tech[param['id']]: 
+                if tech['EAR']: 
+                    techIds[param['id']].append(tech['TechId'])
+        return techIds
+
+    def getActivityEmisionIds(self):
+        commIds = {}
+        for param in self.PARAMETERS['RYTEM']:
+            commIds[param['id']] = {}
+            for tech in self.genData["osy-tech"]:
+                #dodali smo novi paramtear pored EAR imamo i EACR, sad se uslov mora promijneniti
+                # if tech[param['id']]: 
+                #     commIds[param['id']][tech['TechId']] = tech[param['id']]
+                if tech['EAR']: 
+                    commIds[param['id']][tech['TechId']] = tech['EAR']
+        return commIds
+
+    def R(self, Rdata):
+        R = {}
+        for param, obj1 in Rdata.items():
+            R[param] = {}
+            for sc, array in obj1.items():
+                R[param][sc] = {}
+                for o in array:
+                    R[param][sc]['value'] = o['value']
+                        
+        return R
+
+    def RCn(self):
+        RCn = {}
+        for con in self.genData["osy-constraints"]:
+            RCn[con['ConId']] = con['Tag']
+        return RCn
+
+    def RY(self, RYdata):
+        RY = {}
+        for param, obj1 in RYdata.items():
+            RY[param] = {}
+            for sc, array in obj1.items():
+                RY[param][sc] = {}
+                for obj in array:
+                    for year, val in obj.items():
+                        RY[param][sc][year] = val
+        return RY
+
+    def RT(self, RTdata):
+        RT = {}
+        for param, obj1 in RTdata.items():
+            RT[param] = {}
+            for sc, array in obj1.items():
+                RT[param][sc] = {}
+                for o in array:
+                    for tech, val in o.items():
+                        RT[param][sc][tech] = val
+        return RT
+
+    def RE(self, REdata):
+        RE = {}
+        for param, obj1 in REdata.items():
+            RE[param] = {}
+            for sc, array in obj1.items():
+                RE[param][sc] = {}
+                for o in array:
+                    for emi, val in o.items():
+                        RE[param][sc][emi] = val
+        return RE
+
+    def RS(self, RSdata):
+        RS = {}
+        for param, obj in RSdata.items():
+            RS[param] = {}
+            for sc, array in obj.items():
+                RS[param][sc] = {}
+                for o in array:
+                    for stg, val in o.items():
+                        RS[param][sc][stg] = val
+        return RS
+     
+    def RTSM(self, RTSMdata):
+        RTSM = {}
+        for param, obj1 in RTSMdata.items():
+            RTSM[param] = {}
+            for sc, array in obj1.items():
+                RTSM[param][sc] = {}
+                for obj in array:
+                    for value, val in obj.items():
+                        if (value != 'TechId' and value != 'StgId' and value != 'MoId'):
+                            # if value not in RTSM[param][sc]:
+                            #     RTSM[param][sc][year] = {}
+                            # if obj['StgId'] not in RTSM[param][sc][year]:
+                            #     RTSM[param][sc][year][obj['StgId']] = {}
+                            # if obj['TechId'] not in RTSM[param][sc][year][obj['StgId']]:
+                            #     RTSM[param][sc][year][obj['StgId']][obj['TechId']] = {}
+                            # RTSM[param][sc][year][obj['StgId']][obj['TechId']][obj['MoId']] = val
+
+                            if obj['StgId'] not in RTSM[param][sc]:
+                                RTSM[param][sc][obj['StgId']] = {}
+                            if obj['TechId'] not in RTSM[param][sc][obj['StgId']]:
+                                RTSM[param][sc][obj['StgId']][obj['TechId']] = {}
+                            RTSM[param][sc][obj['StgId']][obj['TechId']][obj['MoId']] = val
+        return RTSM
+    
+    def RYCn(self, RYCndata):
+        RYCn = {}
+        for param, obj1 in RYCndata.items():
+            RYCn[param] = {}
+            for sc, array in obj1.items():
+                RYCn[param][sc] = {}
+                for o in array:
+                    for year, val in o.items():
+                        if (year != 'ConId'):
+                            if year not in RYCn[param][sc]:
+                                RYCn[param][sc][year] = {}   
+                            RYCn[param][sc][year][o['ConId']] = val
+        return RYCn
+
+    def RYT(self, RYTdata):
+        RYT = {}
+        for param, obj1 in RYTdata.items():
+            RYT[param] = {}
+            for sc, array in obj1.items():
+                RYT[param][sc] = {}
+                for o in array:
+                    for year, val in o.items():
+                        if (year != 'TechId'):
+                            if year not in RYT[param][sc]:
+                                RYT[param][sc][year] = {}   
+                            RYT[param][sc][year][o['TechId']] = val
+        return RYT
+
+    def RYS(self, RYSdata):
+        RYS = {}
+        for param, obj in RYSdata.items():
+            RYS[param] = {}
+            for sc, array in obj.items():
+                RYS[param][sc] = {}
+                for o in array:
+                    for year, val in o.items():
+                        if (year != 'StgId'):
+                            if year not in RYS[param][sc]:
+                                RYS[param][sc][year] = {}   
+                            RYS[param][sc][year][o['StgId']] = val
+        return RYS
+    
+    def RYTCn(self, RYTCndata):
+        RYTCn = {}
+        for param, obj1 in RYTCndata.items():
+            RYTCn[param] = {}
+            for sc, array in obj1.items():
+                RYTCn[param][sc] = {}
+                for obj in array:
+                    for year, val in obj.items():
+                        if (year != 'TechId' and year != 'ConId'):
+                            if year not in RYTCn[param][sc]:
+                                RYTCn[param][sc][year] = {}
+                            if obj['TechId'] not in RYTCn[param][sc][year]:
+                                RYTCn[param][sc][year][obj['TechId']] = {}
+                            RYTCn[param][sc][year][obj['TechId']][obj['ConId']] = val
+        return RYTCn
+
+    def RYTM(self, RYTMdata):
+        RYTM = {}
+        for param, obj1 in RYTMdata.items():
+            RYTM[param] = {}
+            for sc, array in obj1.items():
+                RYTM[param][sc] = {}
+                for obj in array:
+                    for year, val in obj.items():
+                        if (year != 'TechId' and year != 'MoId'):
+                            if year not in RYTM[param][sc]:
+                                RYTM[param][sc][year] = {}
+                            if obj['TechId'] not in RYTM[param][sc][year]:
+                                RYTM[param][sc][year][obj['TechId']] = {}
+                            RYTM[param][sc][year][obj['TechId']][obj['MoId']] = val
+        return RYTM
+
+    def RYC(self, RYCdata):
+        RYC = {}
+        for param, obj1 in RYCdata.items():
+            RYC[param] = {}
+            for sc, array in obj1.items():
+                RYC[param][sc] = {}
+                for o in array:
+                    for year, val in o.items():
+                        if (year != 'CommId'):
+                            if year not in RYC[param][sc]:
+                                RYC[param][sc][year] = {}
+                            RYC[param][sc][year][o['CommId']] = val
+        return RYC
+
+    def RYE(self, RYEdata):
+        RYE = {}
+        for param, obj1 in RYEdata.items():
+            RYE[param] = {}
+            for sc, array in obj1.items():
+                RYE[param][sc] = {}
+                for o in array:
+                    for year, val in o.items():
+                        if year not in RYE[param][sc]:
+                            RYE[param][sc][year] = {}
+                        if (year != 'EmisId'):
+                            RYE[param][sc][year][o['EmisId']] = val
+        return RYE
+
+    def RYTs(self, RYTsdata):
+        RYTs = {}
+        for param, obj1 in RYTsdata.items():
+            RYTs[param] = {}
+            for sc, array in obj1.items():
+                RYTs[param][sc] = {}
+                for obj in array:
+                    for year, val in obj.items():
+                        if (year != 'TsId'):
+                            if year not in RYTs[param][sc]:
+                                RYTs[param][sc][year] = {}
+                            RYTs[param][sc][year][obj['TsId']] = val
+        return RYTs
+
+    def RYDtb(self, RYDtbdata):
+        RYDtb = {}
+        for param, obj1 in RYDtbdata.items():
+            RYDtb[param] = {}
+            for sc, array in obj1.items():
+                RYDtb[param][sc] = {}
+                for obj in array:
+                    for year, val in obj.items():
+                        if (year != 'DtbId'):
+                            if year not in RYDtb[param][sc]:
+                                RYDtb[param][sc][year] = {}
+                            RYDtb[param][sc][year][obj['DtbId']] = val
+        return RYDtb
+    
+    def RYSeDt(self, RYSeDtdata):
+        RYSeDt = {}
+        for param, obj1 in RYSeDtdata.items():
+            RYSeDt[param] = {}
+            for sc, array in obj1.items():
+                RYSeDt[param][sc] = {}
+                for obj in array:
+                    for year, val in obj.items():
+                        if (year != 'SeId' and year != 'DtId'):
+                            if year not in RYSeDt[param][sc]:
+                                RYSeDt[param][sc][year] = {} 
+                            if obj['SeId'] not in RYSeDt[param][sc][year]:
+                                RYSeDt[param][sc][year][obj['SeId']] = {}
+                            RYSeDt[param][sc][year][obj['SeId']][obj['DtId']] = val
+        return RYSeDt
+    
+    def RYTC(self, RYTCdata):
+        RYTC = {}
+        for param, obj1 in RYTCdata.items():
+            RYTC[param] = {}
+            for sc, array in obj1.items():
+                RYTC[param][sc] = {}
+                for obj in array:
+                    for year, val in obj.items():
+                        if (year != 'TechId' and year != 'CommId'):
+                            if year not in RYTC[param][sc]:
+                                RYTC[param][sc][year] = {}
+                            if obj['TechId'] not in RYTC[param][sc][year]:
+                                RYTC[param][sc][year][obj['TechId']] = {}
+                            RYTC[param][sc][year][obj['TechId']][obj['CommId']] = val
+        return RYTC
+
+    def RYTCM(self, RYTCMdata):
+        RYTCM = {}
+        for param, obj1 in RYTCMdata.items():
+            RYTCM[param] = {}
+            for sc, array in obj1.items():
+                RYTCM[param][sc] = {}
+                for obj in array:
+                    for year, val in obj.items():
+                        if (year != 'TechId' and year != 'CommId' and year != 'MoId'):
+                            if year not in RYTCM[param][sc]:
+                                RYTCM[param][sc][year] = {}
+                            if obj['TechId'] not in RYTCM[param][sc][year]:
+                                RYTCM[param][sc][year][obj['TechId']] = {}
+                            if obj['CommId'] not in RYTCM[param][sc][year][obj['TechId']]:
+                                RYTCM[param][sc][year][obj['TechId']][obj['CommId']] = {}
+                            RYTCM[param][sc][year][obj['TechId']][obj['CommId']][obj['MoId']] = val
+        return RYTCM
+
+    def RYTSM(self, RYTSMdata):
+        RYTSM = {}
+        for param, obj1 in RYTSMdata.items():
+            RYTSM[param] = {}
+            for sc, array in obj1.items():
+                RYTSM[param][sc] = {}
+                for obj in array:
+                    for year, val in obj.items():
+                        if (year != 'TechId' and year != 'StgId' and year != 'MoId'):
+                            if year not in RYTSM[param][sc]:
+                                RYTSM[param][sc][year] = {}
+                            if obj['StgId'] not in RYTSM[param][sc][year]:
+                                RYTSM[param][sc][year][obj['StgId']] = {}
+                            if obj['TechId'] not in RYTSM[param][sc][year][obj['StgId']]:
+                                RYTSM[param][sc][year][obj['StgId']][obj['TechId']] = {}
+                            RYTSM[param][sc][year][obj['StgId']][obj['TechId']][obj['MoId']] = val
+        return RYTSM
+    
+    def RYTE(self, RYTEdata):
+        RYTE = {}
+        for param, obj1 in RYTEdata.items():
+            RYTE[param] = {}
+            for sc, array in obj1.items():
+                RYTE[param][sc] = {}
+                for obj in array:
+                    for year, val in obj.items():
+                        if (year != 'TechId' and year != 'EmisId'):
+                            if year not in RYTE[param][sc]:
+                                RYTE[param][sc][year] = {}
+                            if obj['TechId'] not in RYTE[param][sc][year]:
+                                RYTE[param][sc][year][obj['TechId']] = {}
+                            RYTE[param][sc][year][obj['TechId']][obj['EmisId']] = val
+        return RYTE
+
+    def RYTEM(self, RYTEMdata):
+        RYTEM = {}
+        for param, obj1 in RYTEMdata.items():
+            RYTEM[param] = {}
+            for sc, array in obj1.items():
+                RYTEM[param][sc] = {}
+                for obj in array:
+                    for year, val in obj.items():
+                        if (year != 'TechId' and year != 'EmisId' and year != 'MoId'):
+                            if year not in RYTEM[param][sc]:
+                                RYTEM[param][sc][year] = {}
+                            if obj['TechId'] not in RYTEM[param][sc][year]:
+                                RYTEM[param][sc][year][obj['TechId']] = {}
+                            if obj['EmisId'] not in RYTEM[param][sc][year][obj['TechId']]:
+                                RYTEM[param][sc][year][obj['TechId']][obj['EmisId']] = {}
+                            RYTEM[param][sc][year][obj['TechId']][obj['EmisId']][obj['MoId']] = val
+        return RYTEM
+
+    def RYTTs(self, RYTTsdata):
+        RYTTs = {}
+        for param, obj1 in RYTTsdata.items():
+            RYTTs[param] = {}
+            for sc, array in obj1.items():
+                RYTTs[param][sc] = {}
+                for obj in array:
+                    for year, val in obj.items():
+                        if (year != 'TechId' and year != 'TsId'):
+                            if year not in RYTTs[param][sc]:
+                                RYTTs[param][sc][year] = {}
+                            if obj['TechId'] not in RYTTs[param][sc][year]:
+                                RYTTs[param][sc][year][obj['TechId']] = {}
+                            RYTTs[param][sc][year][obj['TechId']][obj['TsId']] = val
+        return RYTTs
+
+    def RYCTs(self, RYCTsdata):
+        RYCTs = {}
+        for param, obj1 in RYCTsdata.items():
+            RYCTs[param] = {}
+            for sc, array in obj1.items():
+                RYCTs[param][sc] = {}
+                for obj in array:
+                    for year, val in obj.items():
+                        if (year != 'CommId' and year != 'TsId'):
+                            if year not in RYCTs[param][sc]:
+                                RYCTs[param][sc][year] = {} 
+                            if obj['CommId'] not in RYCTs[param][sc][year]:
+                                RYCTs[param][sc][year][obj['CommId']] = {}
+                            RYCTs[param][sc][year][obj['CommId']][obj['TsId']] = val
+        return RYCTs
+
+    def viewDataByTech(self):
+        jsonData = {}
+        data = {}
+        for tech in self.genData["osy-tech"]:
+            data[tech['TechId']] = []
+            for group, array in self.PARAMETERS.items():
+                if group in Config.TECH_GROUPS:
+                    jsonData[group] =  File.readFile(Path(Config.DATA_STORAGE,self.case, group+'.json'))
+                    for obj in array:
+                        byTech = {}
+                        byTech['groupId'] = group
+                        byTech['param'] = obj['id']
+                        byTech['paramName'] = obj['value']
+                        for sc, array in jsonData[group][obj['id']].items():
+                            byTech['ScId'] = sc
+                            for obj2 in array:
+                                if obj2['TechId'] == tech['TechId']:
+                                    byTech['TechId'] = tech['TechId']
+                                    if 'CommId' not in obj:
+                                        byTech['CommId'] = None
+                                    if 'EmisId' not in obj:
+                                        byTech['EmisId'] = None
+                                    if 'ConId' not in obj:
+                                        byTech['ConId'] = None
+                                    if 'TsId' not in obj:
+                                        byTech['TsId'] = None
+                                    if 'MoId' not in obj:
+                                        byTech['MoId'] = None
+                                    for k,v in obj2.items():
+                                        if k != 'TechId':
+                                            byTech[k] = v
+                                    data[tech['TechId']].append(byTech.copy())
+        return data
+
+    def viewDataByComm(self):
+        jsonData = {}
+        data = {}
+        for tech in self.genData["osy-comm"]:
+            data[tech['CommId']] = []
+            for group, array in self.PARAMETERS.items():
+                if group in Config.COMM_GROUPS:
+                    jsonData[group] =  File.readFile(Path(Config.DATA_STORAGE,self.case, group+'.json'))
+                    for obj in array:
+                        byComm = {}
+                        byComm['groupId'] = group
+                        byComm['param'] = obj['id']
+                        byComm['paramName'] = obj['value']
+                        for sc, array in jsonData[group][obj['id']].items():
+                            byComm['ScId'] = sc
+                            for obj2 in array:
+                                if obj2['CommId'] == tech['CommId']:
+                                    byComm['CommId'] = tech['CommId']
+                                    if 'TechId' not in obj:
+                                        byComm['TechId'] = None
+                                    if 'EmisId' not in obj:
+                                        byComm['EmisId'] = None
+                                    if 'ConId' not in obj:
+                                        byComm['ConId'] = None
+                                    if 'TsId' not in obj:
+                                        byComm['TsId'] = None
+                                    if 'MoId' not in obj:
+                                        byComm['MoId'] = None
+                                    for k,v in obj2.items():
+                                        if k != 'CommId':
+                                            byComm[k] = v
+                                    data[tech['CommId']].append(byComm.copy())
+        return data
+
+    def viewDataByEmi(self):
+        jsonData = {}
+        data = {}
+        for tech in self.genData["osy-emis"]:
+            data[tech['EmisId']] = []
+            for group, array in self.PARAMETERS.items():
+                if group in Config.EMIS_GROUPS:
+                    jsonData[group] =  File.readFile(Path(Config.DATA_STORAGE,self.case, group+'.json'))
+                    for obj in array:
+                        byEmi = {}
+                        byEmi['groupId'] = group
+                        byEmi['param'] = obj['id']
+                        byEmi['paramName'] = obj['value']
+                        for sc, array in jsonData[group][obj['id']].items():
+                            byEmi['ScId'] = sc
+                            for obj2 in array:
+                                if obj2['EmisId'] == tech['EmisId']:
+                                    byEmi['EmisId'] = tech['EmisId']
+                                    if 'TechId' not in obj:
+                                        byEmi['TechId'] = None
+                                    if 'CommId' not in obj:
+                                        byEmi['CommId'] = None
+                                    if 'ConId' not in obj:
+                                        byEmi['ConId'] = None
+                                    if 'TsId' not in obj:
+                                        byEmi['TsId'] = None
+                                    if 'MoId' not in obj:
+                                        byEmi['MoId'] = None
+                                    for k,v in obj2.items():
+                                        if k != 'EmisId':
+                                            byEmi[k] = v
+                                    data[tech['EmisId']].append(byEmi.copy())
+        return data
+
+    def viewRTByTech(self):
+        jsonData = {}
+        data = {}
+        for tech in self.genData["osy-tech"]:
+            data[tech['TechId']] = []
+            for group, array in self.PARAMETERS.items():
+                if group in Config.SINGLE_TECH_GROUPS:
+                    jsonData[group] =  File.readFile(Path(Config.DATA_STORAGE,self.case, group+'.json'))
+                    for obj in array:
+                        byTech = {}
+                        byTech['groupId'] = group
+                        byTech['param'] = obj['id']
+                        byTech['paramName'] = obj['value']
+                        for sc, array in jsonData[group][obj['id']].items():
+                            byTech['ScId'] = sc
+                            for obj2 in array:
+                                for k,v in obj2.items():
+                                    if k == tech['TechId']:
+                                        byTech['value'] = v
+                                data[tech['TechId']].append(byTech.copy())
+        return data
+
+    def viewREByEmi(self):
+        jsonData = {}
+        data = {}
+        for tech in self.genData["osy-emis"]:
+            data[tech['EmisId']] = []
+            for group, array in self.PARAMETERS.items():
+                if group in Config.SINGLE_EMIS_GROUPS:
+                    jsonData[group] =  File.readFile(Path(Config.DATA_STORAGE,self.case, group+'.json'))
+                    for obj in array:
+                        byEmi = {}
+                        byEmi['groupId'] = group
+                        byEmi['param'] = obj['id']
+                        byEmi['paramName'] = obj['value']
+                        for sc, array in jsonData[group][obj['id']].items():
+                            byEmi['ScId'] = sc
+                            for obj2 in array:
+                                for k,v in obj2.items():
+                                    if k == tech['EmisId']:
+                                        byEmi['value'] = v
+                                data[tech['EmisId']].append(byEmi.copy())
+        return data
+
+    def updateViewData(self, casename, year, ScId, GroupId, ParamId, TechId, CommId, EmisId, Timeslice, value):
+        try:
+            jsonPath = Path(Config.DATA_STORAGE,casename, GroupId+'.json')
+            jsonData = File.readFile(jsonPath)
+
+            for obj in jsonData[ParamId][ScId]:
+                if ((obj['TechId'] == TechId if TechId is not None else True) and 
+                    (obj['CommId'] == CommId if CommId is not None else True) and 
+                    (obj['EmisId'] == EmisId if EmisId is not None else True) and
+                    (obj['TsId'] == Timeslice if Timeslice is not None else True)):
+                    obj[year] = value
+            File.writeFile( jsonData, jsonPath)
+        except(IOError):
+            raise IOError
+
+    def updateTEViewData(self, casename, ScId, GroupId, ParamId, TechId, EmisId, value):
+        try:
+            jsonPath = Path(Config.DATA_STORAGE,casename, GroupId+'.json')
+            jsonData = File.readFile(jsonPath)
+
+            for obj in jsonData[ParamId][ScId]:
+                for k,v in obj.items():
+                    if ((k == TechId if TechId is not None else True) and 
+                        (k == EmisId if EmisId is not None else True)):
+                        obj[k] = value
+            File.writeFile( jsonData, jsonPath)
+        except(IOError):
+            raise IOError           

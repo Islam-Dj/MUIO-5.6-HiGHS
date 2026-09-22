@@ -1,0 +1,582 @@
+{
+    "R": [
+        {
+            "id": "OV",
+            "value": "Objective Value",
+            "name": "ObjectiveValue",
+            "setrelation": [
+                "r"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "thousand"
+                    },
+                    {
+                        "var": "number"
+                    }
+                ]
+            }
+        }
+    ],
+    "RT": [
+        {
+            "id": "TTMPA",
+            "value": "Total Technology Model Period Activity",
+            "name": "TotalTechnologyModelPeriodActivity",
+            "setrelation": [
+                "r",
+                "t"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "ActUnitId"
+                    }
+                ]
+            }
+        }
+    ],
+    "RYT": [
+        {
+            "id": "ANC",
+            "value": "Accumulated New Capacity",
+            "name": "AccumulatedNewCapacity",
+            "setrelation": [
+                "r",
+                "t",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "CapUnitId"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AIC",
+            "value": "Annualized Investment Cost ",
+            "name": "AnnualizedInvestmentCost",
+            "setrelation": [
+                "r",
+                "t",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "milion"
+                    },
+                    {
+                        "var": "Currency"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "CI",
+            "value": "Capital Investment",
+            "name": "CapitalInvestment",
+            "setrelation": [
+                "r",
+                "t",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "milion"
+                    },
+                    {
+                        "var": "Currency"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AFOC",
+            "value": "Annual Fixed Operating Cost",
+            "name": "AnnualFixedOperatingCost",
+            "setrelation": [
+                "r",
+                "t",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "milion"
+                    },
+                    {
+                        "var": "Currency"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AVOC",
+            "value": "Annual Variable Operating Cost",
+            "name": "AnnualVariableOperatingCost",
+            "setrelation": [
+                "r",
+                "t",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "milion"
+                    },
+                    {
+                        "var": "Currency"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "NC",
+            "value": "New Capacity",
+            "name": "NewCapacity",
+            "setrelation": [
+                "r",
+                "t",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "CapUnitId"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "NONTU",
+            "value": "Number Of New Technology Units",
+            "name": "NumberOfNewTechnologyUnits",
+            "setrelation": [
+                "r",
+                "t",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "number"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "SV",
+            "value": "Salvage Value",
+            "name": "SalvageValue",
+            "setrelation": [
+                "r",
+                "t",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "milion"
+                    },
+                    {
+                        "var": "Currency"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "TCA",
+            "value": "Total Capacity By Technology",
+            "name": "TotalCapacityAnnual",
+            "setrelation": [
+                "r",
+                "t",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "CapUnitId"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "TEP",
+            "value": "Technology Emissions Penalty",
+            "name": "TechnologyEmissionsPenalty",
+            "setrelation": [
+                "r",
+                "t",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "milion"
+                    },
+                    {
+                        "var": "Currency"
+                    }
+                ]
+            }
+        }
+    ],
+    "RYS": [
+        {
+            "id": "NSC",
+            "value": "New Storage Capacity",
+            "name": "NewStorageCapacity",
+            "setrelation": [
+                "r",
+                "s",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "StgUnit"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "ANSC",
+            "value": "Accumulated New Storage Capacity",
+            "name": "AccumulatedNewStorageCapacity",
+            "setrelation": [
+                "r",
+                "s",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "StgUnit"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "TSC",
+            "value": "Total Storage Capacity",
+            "name": "TotalStorageCapacity",
+            "setrelation": [
+                "r",
+                "s",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "StgUnit"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "SVS",
+            "value": "Salvage Value Storage",
+            "name": "SalvageValueStorage",
+            "setrelation": [
+                "r",
+                "s",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "milion"
+                    },
+                    {
+                        "var": "Currency"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "CIS",
+            "value": "Capital Investment Storage",
+            "name": "CapitalInvestmentStorage",
+            "setrelation": [
+                "r",
+                "s",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "milion"
+                    },
+                    {
+                        "var": "Currency"
+                    }
+                ]
+            }
+        }
+    ],
+    "RYTM": [
+        {
+            "id": "TATABM",
+            "value": "Total Annual Technology Activity By Mode",
+            "name": "TotalAnnualTechnologyActivityByMode",
+            "setrelation": [
+                "r",
+                "t",
+                "m",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "ActUnitId"
+                    }
+                ]
+            }
+        }
+    ],
+    "RYTC": [
+        {
+            "id": "ITNC",
+            "value": "Input To New Capacity",
+            "name": "InputToNewCapacity",
+            "setrelation": [
+                "r",
+                "t",
+                "f",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "CommUnit"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "ITTC",
+            "value": "Input To Total Capacity",
+            "name": "InputToTotalCapacity",
+            "setrelation": [
+                "r",
+                "t",
+                "f",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "CommUnit"
+                    }
+                ]
+            }
+        }
+    ],
+    "RYTE": [
+        {
+            "id": "ATE",
+            "value": "Annual Technology Emission",
+            "name": "AnnualTechnologyEmission",
+            "setrelation": [
+                "r",
+                "t",
+                "e",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "EmiUnit"
+                    }
+                ]
+            }
+        }
+    ],
+    "RYCTs": [
+        {
+            "id": "D",
+            "value": "Demand",
+            "name": "Demand",
+            "setrelation": [
+                "r",
+                "l",
+                "f",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "CommUnit"
+                    }
+                ]
+            }
+        }
+    ],
+    "RYTEM": [
+        {
+            "id": "ATEBM",
+            "value": "Annual Technology Emission By Mode",
+            "name": "AnnualTechnologyEmissionByMode",
+            "setrelation": [
+                "r",
+                "t",
+                "e",
+                "m",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "EmiUnit"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "EBAC",
+            "value": "Emission By Activity Change",
+            "name": "EmissionByActivityChange",
+            "setrelation": [
+                "r",
+                "t",
+                "e",
+                "m",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "EmiUnit"
+                    }
+                ]
+            }
+        }
+    ],
+    "RYTMTs": [
+        {
+            "id": "ROA",
+            "value": "Rate Of Activity",
+            "name": "RateOfActivity",
+            "setrelation": [
+                "r",
+                "l",
+                "t",
+                "m",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "ActUnitId"
+                    },
+                    {
+                        "var": "divide"
+                    },
+                    {
+                        "var": "years"
+                    }
+                ]
+            }
+        }
+    ],
+    "RYTCMTs": [
+        {
+            "id": "PBT",
+            "value": "Production By Technology By Mode",
+            "name": "ProductionByTechnologyByMode",
+            "setrelation": [
+                "r",
+                "l",
+                "t",
+                "m",
+                "f",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "CommUnit"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "ROPBT",
+            "value": "Rate Of Production By Technology By Mode",
+            "name": "RateOfProductionByTechnologyByMode",
+            "setrelation": [
+                "r",
+                "l",
+                "t",
+                "m",
+                "f",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "CommUnit"
+                    },
+                    {
+                        "var": "divide"
+                    },
+                    {
+                        "var": "years"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "ROUBT",
+            "value": "Rate Of Use By Technology By Mode",
+            "name": "RateOfUseByTechnologyByMode",
+            "setrelation": [
+                "r",
+                "l",
+                "t",
+                "m",
+                "f",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "CommUnit"
+                    },
+                    {
+                        "var": "divide"
+                    },
+                    {
+                        "var": "years"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "UBT",
+            "value": "Use By Technology By Mode",
+            "name": "UseByTechnologyByMode",
+            "setrelation": [
+                "r",
+                "l",
+                "t",
+                "m",
+                "f",
+                "y"
+            ],
+            "unitRule": {
+                "cat": [
+                    {
+                        "var": "CommUnit"
+                    }
+                ]
+            }
+        }
+    ]
+}

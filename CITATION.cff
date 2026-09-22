@@ -2,16 +2,20 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "MUIO 5.6 - Community Edition (HiGHS)"
 abstract: >-
-  A Windows build of MUIO (Modelling User Interface for OSeMOSYS) with additional
-  solver options, including HiGHS, for faster solving of large OSeMOSYS and CLEWs
-  models. Solver output is converted to the format MUIO already reads, so results
-  and visualisations are unchanged.
+  A community edition of MUIO (Modelling User Interface for OSeMOSYS) with
+  additional solver options, including HiGHS, for solving large OSeMOSYS and
+  CLEWs models. It adds configurable HiGHS settings, live progress for each
+  stage of a run, and a run summary recording the outcome, the objective value,
+  the problem size and type, peak memory and stage times. The reported objective
+  includes the fixed cost of existing capacity, which the exported matrix files
+  do not carry. Solver output is converted to the format MUIO already reads, so
+  results and visualisations are unchanged.
 type: software
 authors:
   - family-names: "DJEDAA"
     given-names: "Nour El Islam"
     affiliation: "CREAD - Centre de Recherche en Economie Appliquee pour le Developpement, Algeria"
-version: "5.6.2"
+version: "5.6.3"
 date-released: "2026-09-22"
 license: Apache-2.0
 repository-code: "https://github.com/Islam-Dj/MUIO-5.6-HiGHS"
@@ -38,7 +42,7 @@ references:
     end: 142
     year: 2018
     doi: "10.1007/s12532-017-0130-5"
-    notes: "The HiGHS solver used by this build."
+    notes: "The HiGHS solver used by this edition."
   - type: article
     title: >-
       OSeMOSYS: The Open Source Energy Modeling System. An introduction to its
@@ -61,4 +65,4 @@ references:
   - type: software
     title: "MUIO - Modelling User Interface for OSeMOSYS"
     repository-code: "https://github.com/OSeMOSYS/MUIO"
-    notes: "The application this build is based on."
+    notes: "The application this edition is based on."
