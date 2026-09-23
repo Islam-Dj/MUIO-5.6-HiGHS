@@ -22,6 +22,7 @@ from pathlib import Path
 DEFAULT_WEIGHTS = {
     'preparing data': 0.02,
     'generating matrix': 0.38,
+    'checking matrix': 0.01,
     'solving': 0.33,
     'writing result files': 0.18,
     'preparing charts': 0.09,
@@ -131,7 +132,7 @@ def get(case, caserun):
             return {'status': 'unknown'}
 
         done = list(rec['done'])
-        elapsed = now - rec['started_at']
+        elapsed = (rec['finished_at'] or now) - rec['started_at']
         stage_elapsed = now - rec['stage_started_at'] if rec['current'] else 0.0
 
         if rec['status'] != 'running':
@@ -177,7 +178,7 @@ def get(case, caserun):
 
 # Stage names in run order, so every row of the CSV has its columns in the same
 # places no matter which branch the run took.
-STAGE_COLUMNS = ['preparing data', 'generating matrix', 'solving',
+STAGE_COLUMNS = ['preparing data', 'generating matrix', 'checking matrix', 'solving',
                  'writing result files', 'preparing charts']
 
 # The HiGHS settings worth recording alongside the timings. Blank for CBC and GLPK,
@@ -319,11 +320,10 @@ def setObjectiveConstant(case, caserun, value):
 def readSolveOutcome(text, detail=None):
     """(outcome, objective) from the solver's own words.
 
-    'text' is the one result line each branch composes for the interface; 'detail'
-    is the solver's log, read only when the result line settles nothing. Two
-    solvers need it: CBC prints a MIP objective on its own line rather than in the
-    result line, and GLPK reports a failed LP as 'UNDEFINED' with objective 0,
-    explaining itself only in the log ('LP HAS NO PRIMAL FEASIBLE SOLUTION').
+    'text' is the result line of the run; 'detail' is the solver's log, read when
+    the result line names no specific outcome. GLPK reports an infeasible LP only in
+    its log ('LP HAS NO PRIMAL FEASIBLE SOLUTION'), and CBC prints a MIP objective
+    on its own line.
 
     When the outcome carries no solution, no objective is returned, even if a
     figure appears in the line.
@@ -345,38 +345,44 @@ def readSolveOutcome(text, detail=None):
     if objective is None:
         objective = objective_in(detail)
 
-    #(what to look for, what to call it, whether an objective still means anything)
-    wordings = (('no integer feasible', 'Infeasible', False),
+    # (what to look for, what to call it, whether an objective still means anything)
+    specific = (('no integer feasible', 'Infeasible', False),
                 ('no primal feasible', 'Infeasible', False),
                 ('no dual feasible', 'Unbounded', False),
                 ('infeasible', 'Infeasible', False),
                 ('unbounded', 'Unbounded', False),
                 ('time limit', 'Time limit', True),
+                ('stopped on time', 'Time limit', True),
                 ('iteration limit', 'Iteration limit', True),
                 ('interrupt', 'Interrupted', True),
                 ('failed', 'Error', False),
-                ('error', 'Error', False),
-                ('optimal', 'Optimal', True))
+                ('error', 'Error', False))
+    not_optimal = re.compile(r'\bno(?:n|t)[\s-]+optimal\b', re.I)
+    optimal = re.compile(r'(?<![\w-])optimal\b', re.I)
 
     def scan(blob):
         low = (blob or '').lower()
-        for needle, word, keep in wordings:
+        for needle, word, keep in specific:
             if needle in low:
                 return word, keep
         return None, True
 
     word, keep = scan(text)
-    if word is None:
-        found = re.search(r'status:\s*([^(\n]+)', text)
-        if found:
-            return found.group(1).strip(), None
-        word, keep = scan(detail)
-        if word == 'Optimal':
-            word = None                 # optimality is taken from the result line only
-        if word is None:
-            found = re.match(r'\s*([A-Za-z][\w \-]*?)\s*-\s*objective value', text)
-            return (found.group(1).strip(), None) if found else (None, objective)
-    return word, (objective if keep else None)
+    if word:
+        return word, (objective if keep else None)
+    if optimal.search(text) and not not_optimal.search(text):
+        return 'Optimal', objective
+    # The result line names no specific outcome; the solver's log may.
+    word, keep = scan(detail)
+    if word:
+        return word, (objective if keep else None)
+    if not_optimal.search(text):
+        return 'Not optimal', None
+    found = re.search(r'status:\s*([^(\n]+)', text)
+    if found:
+        return found.group(1).strip(), None
+    found = re.match(r'\s*([A-Za-z][\w \-]*?)\s*-\s*objective value', text)
+    return (found.group(1).strip(), None) if found else (None, objective)
 
 
 def readTranslatorOutput(text):

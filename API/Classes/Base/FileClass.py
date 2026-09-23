@@ -1,68 +1,33 @@
-#import ujson as json
+"""UTF-8 JSON storage with atomic replacement and intact error information."""
 import json
+import os
+import tempfile
+from pathlib import Path
 
 class File:
     @staticmethod
     def readFile(path):
-        try:   
-            f = open(path, mode="r")
-            data = json.loads(f.read())
-            #cirilica u json file
-            #data = json.load(open(path, encoding='utf-8-sig'))
-            f.close()
-            return data
-        except( IndexError):
-            raise IndexError
-        except(IOError):
-            raise IOError
-        except OSError:
-            raise OSError
+        with open(path, encoding='utf-8-sig') as handle:
+            return json.load(handle)
+
+    readParamFile = readFile
 
     @staticmethod
     def writeFile(data, path):
+        payload = json.dumps(data, ensure_ascii=True, indent=4, allow_nan=False)
+        path = Path(path)
+        temp = None
         try:
-            f = open(path, mode="w")
-            #json
-            #f.write(json.dumps(data, ensure_ascii=False, separators=(',', ':')))
-            #f.write(json.dumps(data, ensure_ascii=True,  indent=4, sort_keys=False))
-            #ascii false da zapisemo cirilicu u file
-            f.write(json.dumps(data, ensure_ascii=True,  indent=4, sort_keys=False))
-            #f.write(json.dumps(data))
-            f.close()
-        # except(IOError, IndexError):
-        #     return('File not found or file is empty')
-        #ovako prosljedjujemo exception u prethodnom slucaju vracamo response u funkciju koja poziva writeFile
-        except(IOError, IndexError):
-            raise IndexError
-        except OSError:
-            raise OSError
-        
-        #drugi nacin pisanj u file
-        #with open(self.hData, mode="w") as f:
-        #json.dump(data,f)
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
+                                             dir=path.parent, prefix='.save-',
+                                             suffix='.tmp', delete=False) as handle:
+                temp = Path(handle.name)
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp, path)
+        finally:
+            if temp is not None and temp.exists():
+                temp.unlink()
 
-    @staticmethod
-    def writeFileUJson(data, path):
-        try:
-            f = open(path, mode="w")
-            #usjon
-            f.write(json.dumps(data))
-            f.close()
-        except(IOError, IndexError):
-            raise IndexError
-        except OSError:
-            raise OSError
-
-    @staticmethod
-    def readParamFile(path):
-        try:
-            f = open(path, mode="r")
-            data = json.loads(f.read())
-            f.close()
-            return data
-        except( IndexError):
-            raise IndexError
-        except(IOError):
-            raise IOError
-        except OSError:
-            raise OSError
+    writeFileUJson = writeFile

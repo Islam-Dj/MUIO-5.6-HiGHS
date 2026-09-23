@@ -38,8 +38,9 @@ code-signed. Choose **More info → Run anyway**.
 
 ## Using the application
 
-1. **Create or import a model** — the installation starts empty. Use *Add model*, or upload an
-   existing MUIO model archive.
+1. **Create or import a model** — the installation starts empty. Use *Add/configure model*, or
+   *Import model* to bring in an existing MUIO model archive. An imported archive is checked before
+   the model is created.
 2. Open a case run and press **Generate data File**.
 3. Choose a solver in the selector next to **RUN MODEL**.
 4. Press **RUN MODEL**. While it runs, the progress indicator shows the current stage. When it
@@ -61,6 +62,14 @@ application completely. Solvers run in the background without opening console wi
 Models are stored in `WebAPP\DataStorage` inside the installation folder.
 **Uninstalling does not delete them.** Use *Backup model* in the application before major
 changes.
+
+Each model folder also holds two folders that MUIO manages itself:
+
+* `.run-history` — one copy of the previous results of each case run
+* `.executions` — the latest run of each case run that did not produce new results, kept so the
+  cause can be examined
+
+*MUIO clean up* removes result files but keeps each case run's input data and its run record.
 
 ---
 
@@ -99,27 +108,42 @@ three HiGHS options; every field can be left at its default.
 | **Presolve** | choose *(default)*, on, off | removes redundant rows and columns before solving. Turn off only to diagnose a model. |
 | **Parallel** | on *(default)*, choose, off | allows HiGHS to use several processor cores |
 | **Threads** | a number, `0` = automatic | how many threads HiGHS may use |
-| **Time limit** | seconds, empty = no limit | stops the solve after this time. Not applied to *pdlp*, which does not support it. |
+| **Time limit** | seconds, empty = no limit | stops the solve after this time. Cannot be combined with *pdlp*: MUIO refuses such a run and says so. |
 | **PDLP tolerance** | e.g. `1e-7` *(default)*, `1e-8` | used by *pdlp* only: a smaller value gives a more exact objective and takes longer |
 | **MIP gap** | e.g. `0.01` for 1 %, empty = exact | mixed-integer models only: accept a solution within this relative gap of the optimum |
 
-The settings actually used are recorded with every run in the run summary.
+A setting that is not valid — an unknown value, or a number out of range — is refused with a
+message rather than ignored. The settings actually used are recorded with every run in the run
+summary.
 
 ---
 
 ## Progress while a model runs
 
 While a model runs, the progress indicator shows the **current stage**, its **elapsed time** and
-an **estimated percentage** for the whole run. A run passes through five stages:
+an **estimated percentage** for the whole run. A run passes through six stages:
 
 1. **preparing data** — the case data is prepared for the model
 2. **generating matrix** — the model and data are translated into the optimisation problem
-3. **solving** — the chosen solver finds the optimum
-4. **writing result files** — the solution is written to the result CSV files
-5. **preparing charts** — the data for the *Results* page is prepared
+3. **checking matrix** — the size and type of the problem are read from the generated matrix
+4. **solving** — the chosen solver finds the optimum
+5. **writing result files** — the solution is written to the result CSV files
+6. **preparing charts** — the data for the *Results* page is prepared
 
 The percentage is an estimate while a stage is running; once a stage finishes, its real time is
 used.
+
+### While a model runs
+
+* Only one model runs at a time.
+* Your other models stay available: you can open, read and edit them during the run.
+* The model being run cannot be changed until its run finishes.
+
+### When a run does not succeed
+
+New results replace the previous ones **only when a run succeeds**. If a run fails, or ends without
+an optimal solution — an infeasible model, for example — your previous results stay exactly as they
+were, and the Run summary shows what the solver concluded.
 
 ---
 
@@ -152,7 +176,7 @@ contains:
 | `status`, `outcome` | how the run ended and what the solver concluded |
 | `objective`, `fixed_cost`, `total_cost` | see *Objective value* below |
 | `total_s`, `peak_mb` | total run time in seconds, peak memory in MB |
-| `<stage>_s`, `<stage>_pct` | time and share of each of the five stages |
+| `<stage>_s`, `<stage>_pct` | time and share of each of the six stages |
 | `highs_<setting>` | the HiGHS settings in force (empty for CBC and GLPK) |
 
 **New record** starts a fresh record. The previous one is not deleted: it is kept in the same
@@ -179,9 +203,11 @@ This edition recovers the constant during matrix generation and **adds it back**
 The constant does not change **which** solution is optimal: capacities, activities and all other
 results are the same with or without it. Only the reported total cost changes.
 
-With **HiGHS (mosox)**, the matrix is generated without GLPK, so the constant cannot be read
-directly. It is taken from an earlier run of another solver option on the **same data**; if there
-has been none, the Run summary says so and the total is reported without it.
+With **HiGHS (mosox)**, the matrix is generated without GLPK, so the constant is calculated
+directly from the model's data — residual capacity, fixed cost and discount rate. This calculation
+applies to the OSeMOSYS model file supplied with MUIO. If that file has been modified, MUIO does not
+attempt it: the Run summary states that the full cost is unavailable, and no `ObjectiveValue.csv` is
+written for that run.
 
 ---
 
@@ -206,15 +232,23 @@ The installer is the simplest way to use MUIO. To run it from this repository in
    WebAPP\SOLVERs\MOSOX\mosox.exe
    ```
 
-   **CBC and GLPK are needed for every solver option** — GLPK also generates the matrix that the
-   HiGHS options solve. HiGHS (standalone) and HiGHS (mosox) each need their own program as well;
-   HiGHS (highspy) needs nothing more, as it uses the `highspy` package.
+   Each solver option needs these programs:
+
+   | option | programs |
+   |---|---|
+   | CBC | `glpsol.exe`, `cbc.exe` |
+   | GLPK | `glpsol.exe` |
+   | HiGHS (standalone) | `glpsol.exe`, `highs.exe` |
+   | HiGHS (highspy) | `glpsol.exe` — HiGHS itself comes from the `highspy` package |
+   | HiGHS (mosox) | `mosox.exe` — HiGHS itself comes from the `highspy` package |
+
+   GLPK generates the matrix for every option except HiGHS (mosox).
 
    The easiest source for exactly these files is an installed copy of MUIO: copy them from
    `WebAPP\SOLVERs` in the installation folder. CBC and GLPK are also found if they are on your
    `PATH`.
 
-4. Start MUIO **from the repository root** (the application finds its folders relative to it):
+4. Start MUIO — run only one MUIO at a time on the same model folder:
 
    ```
    python API/app.py
@@ -239,7 +273,10 @@ terminal.
 | Nothing appears when launching | see `WebAPP\console.log` and `WebAPP\app.log` in the installation folder |
 | No application window appears | Edge or Chrome was not found; MUIO is still running — open `http://127.0.0.1:5002` in a browser |
 | The page stays on *Loading…* with *Error!* | MUIO has stopped — start it again and reload the page |
-| From source, a run fails at once with *Error!* | a solver program is missing — the terminal names it; place it as described in *Running from source* |
+| *This model is being run or changed* | wait for the run to finish; your other models can be used meanwhile |
+| *A model execution is already in progress* | only one model runs at a time — start the next one when the current run finishes |
+| A message about *PDLP* and a time limit | choose another algorithm, or remove the time limit |
+| From source, a run fails at once | a solver program is missing — place it as described in *Running from source* |
 
 ---
 
@@ -272,6 +309,10 @@ As required by Apache 2.0 §4(b), the changes made to MUIO 5.6 are:
 * live progress for each stage of a run
 * the Run summary and the `run_summary.csv` record, with .csv and .xlsx download
 * recovery of the objective's constant term, added to the reported objective value
+* results published only when a run succeeds, with one previous copy kept
+* changes locked per model while that model is being run
+* validated import of model archives, and safe saving of model data
+* *MUIO clean up* keeps each case run's input data and run record
 * faster writing of the result files
 * solver programs run without console windows, and packaging as a desktop application with an
   installer

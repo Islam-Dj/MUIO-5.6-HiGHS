@@ -9,6 +9,12 @@ from datetime import timedelta
 
 #import json
 from Classes.Base import Config
+from Classes.Base.Publication import recover
+
+# Restore an interrupted result publication before any case is served.
+for _case_folder in Config.DATA_STORAGE.iterdir():
+    if _case_folder.is_dir() and not _case_folder.name.startswith('.'):
+        recover(_case_folder)
 # from API.Classes.Base.SyncS3 import SyncS3
 from Routes.Upload.UploadRoute import upload_api
 from Routes.Case.CaseRoute import case_api
@@ -24,19 +30,12 @@ from queue import Queue, Empty
 from threading import Event
 
 #RADI
-template_dir = os.path.abspath('WebAPP')
-static_dir = os.path.abspath('WebAPP')
+template_dir = str(Config.WebAPP_PATH)
+static_dir = str(Config.WebAPP_PATH)
 
 
 # ========================= DELETE LOG FILE ON START =========================
 logfile =  os.path.join(static_dir, "app.log")
-
-if os.path.exists(logfile):
-    try:
-        os.remove(logfile)
-    except PermissionError:
-        pass
-
 
 # ============= File + Console Logger ============
 logger = logging.getLogger()
@@ -89,7 +88,10 @@ sys.excepthook = log_exception
 app = Flask(__name__, static_url_path='', static_folder=static_dir,  template_folder=template_dir)
 
 app.permanent_session_lifetime = timedelta(days=5)
-app.config['SECRET_KEY'] = '12345'
+from Classes.Base.RequestSafety import install, session_key
+app.config['SECRET_KEY'] = session_key(Config.DATA_STORAGE)
+app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
+install(app)
 app.config["MAX_CONTENT_LENGTH"] = None
 
 app.register_blueprint(upload_api)
@@ -98,22 +100,9 @@ app.register_blueprint(viewdata_api)
 app.register_blueprint(datafile_api)
 app.register_blueprint(syncs3_api)
 
-CORS(app)
+
 
 #potrebno kad je front end na drugom serveru 127.0.0.1
-@app.after_request
-def add_headers(response):
-    if Config.HEROKU_DEPLOY == 0: 
-        #localhost
-        response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1')
-    else:
-        #HEROKU
-        response.headers.add('Access-Control-Allow-Origin', 'https://osemosys.herokuapp.com/')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-    #response.headers['Content-Type'] = 'application/javascript'
-    return response
-
 # @app.errorhandler(CustomException)
 # def handle_invalid_usage(error):
 #     response = jsonify(error.to_dict())
@@ -168,6 +157,6 @@ if __name__ == '__main__':
         serve(app, host='127.0.0.1', port=port,  threads=8)
     else:
         #HEROKU
-        app.run(host='0.0.0.0', port=port, debug=True)
-        #app.run(host='127.0.0.1', port=port, debug=True)
+        app.run(host='0.0.0.0', port=port, debug=False)
+        #app.run(host='127.0.0.1', port=port, debug=False)
 

@@ -4,14 +4,15 @@ import platform
 import shutil, json
 from copy import deepcopy
 from Classes.Base import Config
+from Classes.Base.SafePaths import component, child
 from Classes.Base.FileClass import File
 from Classes.Case.HelpersClass import Helpers
 
 class Osemosys():
     def __init__(self, case):
-        self.case = case
+        self.case = component(case)
         self.storagePath = Path(Config.DATA_STORAGE)
-        self.casePath = self.storagePath / case
+        self.casePath = child(self.storagePath, case)
 
         self.PARAMETERS = File.readParamFile(self.storagePath / 'Parameters.json')
         self.VARIABLES = File.readParamFile(self.storagePath / 'Variables.json')
@@ -75,10 +76,6 @@ class Osemosys():
         #standalone HiGHS executable used by the HiGHS (exe) option
         self.highsFolder = Path(Config.SOLVERs_FOLDER, 'HIGHS')
 
-        self.glpsol_path, self.glpsol_is_bundled = self._resolve_solver_executable(self.glpkFolder, glpsol_name, platform.system())
-        self.cbc_path,    self.cbc_is_bundled    = self._resolve_solver_executable(self.cbcFolder,  cbc_name, platform.system())
-
-
         self.PARAM = Helpers.build_param(self.PARAMETERS)
         self.VARS  = Helpers.build_vars(self.VARIABLES)
         self.VAR_BY_NAME = Helpers.build_var_by_name(self.VARIABLES)
@@ -103,6 +100,13 @@ class Osemosys():
         # self.VARS = a
 
  
+    def resolveSolver(self, solver):
+        folder = self.glpkFolder if solver == 'glpk' else self.cbcFolder
+        name = 'glpsol' if solver == 'glpk' else 'cbc'
+        if platform.system() == 'Windows':
+            name += '.exe'
+        return Helpers.resolve_solver_executable(folder, name, platform.system())[0]
+
     @staticmethod
     def __build_param(parameters: dict) -> dict[str, dict[str, str]]:
         d: dict[str, dict[str, str]] = {}

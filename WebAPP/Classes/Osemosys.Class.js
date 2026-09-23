@@ -16,7 +16,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -37,7 +37,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -57,7 +57,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -80,7 +80,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -100,7 +100,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -120,7 +120,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -143,7 +143,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -166,7 +166,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -186,7 +186,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -209,7 +209,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -265,7 +265,7 @@ export class Osemosys {
                 },
                 error: function(xhr, status, error) {
                     console.log("xhr, status, error ", xhr, status, error )
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -289,7 +289,7 @@ export class Osemosys {
                 },
                 error: function(xhr, status, error) {
                     console.log("xhr, status, error ", xhr, status, error )
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -313,7 +313,7 @@ export class Osemosys {
                 },
                 error: function(xhr, status, error) {
                     console.log("xhr, status, error ", xhr, status, error )
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -391,7 +391,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -414,7 +414,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -434,7 +434,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -491,7 +491,7 @@ export class Osemosys {
         //         resolve(DATA);
         //     })
         //     .catch(error => {
-        //         if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+        //         if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
         //         reject(error);
         //     });
         // });
@@ -521,7 +521,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -541,7 +541,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -576,7 +576,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -597,7 +597,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -618,7 +618,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });
@@ -638,7 +638,7 @@ export class Osemosys {
                     resolve(result);
                 },
                 error: function(xhr, status, error) {
-                    if(error == 'UNKNOWN'){ error =  xhr.responseJSON.message }
+                    if (xhr.responseJSON && xhr.responseJSON.message) { error = xhr.responseJSON.message; }
                     reject(error);
                 }
             });

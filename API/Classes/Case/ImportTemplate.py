@@ -1,4 +1,5 @@
 from pathlib import Path
+from Classes.Base.SafePaths import child
 import pandas as pd
 import string, random, json, os.path, time
 
@@ -10,7 +11,7 @@ class ImportTemplate():
     def __init__(self,template):
         self.PARAMETERS = File.readParamFile(Path(Config.DATA_STORAGE, 'Parameters.json'))
         self.VARIABLES = File.readParamFile(Path(Config.DATA_STORAGE, 'Variables.json'))
-        self.TEMPLATE_PATH = Path(Config.DATA_STORAGE, template)
+        self.TEMPLATE_PATH = child(Config.DATA_STORAGE, template)
 
     def getTechById(self, techs):
         techNames = {}

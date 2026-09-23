@@ -20,26 +20,14 @@ S3_SECRET = ""
 ALLOWED_EXTENSIONS = set(['zip', 'application/zip'])
 ALLOWED_EXTENSIONS_XLS = set(['xls', 'xlsx'])
 
-ROOT_DIR = Path(__file__).resolve().parent.parent 
-
-UPLOAD_FOLDER = Path('WebAPP')
-WebAPP_PATH = Path('WebAPP')
-DATA_STORAGE = Path("WebAPP", 'DataStorage')
-CLASS_FOLDER = Path("WebAPP", 'Classes')
-EXTRACT_FOLDER = Path("")
-SOLVERs_FOLDER = Path('WebAPP', 'SOLVERs')
-
-
-#absolute paths
-# OSEMOSYS_ROOT = os.path.abspath(os.getcwd())
-# UPLOAD_FOLDER = Path(OSEMOSYS_ROOT, 'WebAPP')
-# WebAPP_PATH = Path(OSEMOSYS_ROOT, 'WebAPP')
-# DATA_STORAGE = Path(OSEMOSYS_ROOT, "WebAPP", 'DataStorage')
-# CLASS_FOLDER = Path(OSEMOSYS_ROOT, "WebAPP", 'Classes')
-# EXTRACT_FOLDER = Path(OSEMOSYS_ROOT, "")
-# SOLVERs_FOLDER = Path(OSEMOSYS_ROOT, 'WebAPP', 'SOLVERs')
-
-os.chmod(DATA_STORAGE, 0o777)
+# Paths do not depend on the shell's working directory.
+ROOT_DIR = Path(__file__).resolve().parents[3]
+WebAPP_PATH = ROOT_DIR / 'WebAPP'
+UPLOAD_FOLDER = WebAPP_PATH
+DATA_STORAGE = WebAPP_PATH / 'DataStorage'
+CLASS_FOLDER = WebAPP_PATH / 'Classes'
+SOLVERs_FOLDER = WebAPP_PATH / 'SOLVERs'
+EXTRACT_FOLDER = ROOT_DIR
 
 HEROKU_DEPLOY = 0
 AWS_SYNC = 0

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 from Classes.Base import Config
 from Classes.Case.OsemosysClass import Osemosys
 from Classes.Base.FileClass import File
+from Classes.Base.SafePaths import child, within
 from Classes.Case.HelpersClass import Helpers
 from Classes.Case.HighsSolverClass import HighsSolver
 from Classes.Case.MosoxClass import Mosox
@@ -942,30 +943,18 @@ class DataFile(Osemosys):
             #caseRunPath = Path(Config.DATA_STORAGE,self.case,'res', caserunname)
             #self.resData = Path(Config.DATA_STORAGE,self.case,'view', 'resData.json')
 
-            ################## RES folder
-            casePath = Path(self.resultsPath, caserunname)
+            casePath = child(self.resultsPath, caserunname)
             if not resultsOnly:
                 shutil.rmtree(casePath)
             else:
-                for item in os.listdir(casePath):
-                    item_path = os.path.join(casePath, item)
-                    if os.path.isfile(item_path) or os.path.islink(item_path):
-                        os.remove(item_path)  # delete file
-                    elif os.path.isdir(item_path):
-                        if not resultsOnly:
-                            shutil.rmtree(item_path)  # delete subfolder
-                        else:
-                            # remove all contents inside the folder but keep the folder itself
-                            for root, dirs, files in os.walk(item_path):
-                                # delete files
-                                for f in files:
-                                    os.remove(os.path.join(root, f))
-                                # delete sub-directories
-                                for d in dirs:
-                                    shutil.rmtree(os.path.join(root, d))
-
-            ##############################
-
+                for item in casePath.iterdir():
+                    if item.name == 'data.txt' or item.name.startswith('run_summary'):
+                        continue
+                    within(casePath, item.name)
+                    if item.is_dir() and not item.is_symlink():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
 
             ##################VIEW folder
             #  update resData.json folder
@@ -1016,6 +1005,9 @@ class DataFile(Osemosys):
                     for caserunname in os.listdir( self.resultsPath):
                         caserunname_path = os.path.join(self.resultsPath, caserunname)
                         for carerunData in os.listdir( caserunname_path):
+                            # the case run's input data and its run record are not results
+                            if carerunData == 'data.txt' or carerunData.startswith('run_summary'):
+                                continue
                             file_path = os.path.join(caserunname_path, carerunData)
                             try:
                                 if os.path.isfile(file_path) or os.path.islink(file_path):
@@ -2025,603 +2017,23 @@ class DataFile(Osemosys):
         except Exception as err:
             print(f"Unexpected error: {err}")
             print("An error occurred:")
-            traceback.print_exc()  # Prints full traceback
+            raise ValueError("Data preprocessing failed: " + str(err)) from err
 
     def batchRun(self, solver, cases):
-        try:
-            batchlog=""
-            msg=""
-            status = "Success"
-            results = []
-
-            ##################################Sequential code
-            for caserun in cases:
-                logger.info("Starting batch run optimization process for model %s caserun %s!", self.case, caserun)
-                runout =self.run(solver, caserun)
-                logger.info("Batch run optimization process %s  %s !", runout["caserun"], runout["timer"])
-                msg+="Case: {0}{1}{2}".format( runout["caserun"], runout["timer"],  '\n')
-                batchlog+="{0}{1}{2}{3}{4}{5}{6}{7}{8}".format(runout["glpk_message"],'\n',runout["glpk_stdmsg"],'\n',runout["cbc_message"],'\n',runout["cbc_stdmsg"],'\n', '\n')
-                batchlog+="------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ {0}".format('\n')
-                if runout["status_code"] != 'success':
-                    status = "Error"
-
-            ##################################Multiprocessing
-            # m = multiprocessing.Manager()
-            # lock = m.Lock()
-            # with concurrent.futures.ProcessPoolExecutor() as executor:
-            #     results = [executor.submit(self.run, solver, caserun, lock  ) for caserun in cases]
-            #     #runout = [result.result() for result in results]
-
-            #     # for caserun in cases:
-            #     #     # lock[caserun] = threading.Lock() 
-            #     #     #lock = threading.Lock() 
-            #     #     t = executor.submit(self.run, solver, caserun)
-            #     #     results.append(t)
-
-            # for ft in concurrent.futures.as_completed(results):
-            #     runout = ft.result()
-            #     msg+="Case: {0}{1}{2}".format( runout["caserun"], runout["timer"],  '\n')
-            #     # batchlog+="GLPK status {0}{1}{2}GLPK log {3}{4}{5}{6}CBC log {7}{8}{9}{10}{11}".format(runout["status_code"], runout["timer"],'\n',runout["glpk_message"],'\n',runout["glpk_stdmsg"],'\n',runout["cbc_message"],'\n',runout["cbc_stdmsg"],'\n', '\n\n')
-            #     batchlog+="{0}{1}{2}{3}{4}{5}{6}{7}{8}".format(runout["glpk_message"],'\n',runout["glpk_stdmsg"],'\n',runout["cbc_message"],'\n',runout["cbc_stdmsg"],'\n', '\n')
-            #     batchlog+="------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ {0}".format('\n')
-            #     if runout["status_code"] != 'success':
-            #         status = "Error"
-            
-
-            #####################################Threading
-            # with concurrent.futures.ThreadPoolExecutor() as executor:
-            #     results = [executor.submit(self.run, solver, caserun  ) for caserun in cases]
-
-            #     # for caserun in cases:
-            #     #     # lock[caserun] = threading.Lock() 
-            #     #     #lock = threading.Lock() 
-            #     #     t = executor.submit(self.run, solver, caserun)
-            #     #     results.append(t)
-
-            # for f in concurrent.futures.as_completed(results):
-            #     runout = f.result()
-            #     msg+="Case: {0}{1}{2}".format( runout["caserun"], runout["timer"],  '\n')
-            #     # batchlog+="GLPK status {0}{1}{2}GLPK log {3}{4}{5}{6}CBC log {7}{8}{9}{10}{11}".format(runout["status_code"], runout["timer"],'\n',runout["glpk_message"],'\n',runout["glpk_stdmsg"],'\n',runout["cbc_message"],'\n',runout["cbc_stdmsg"],'\n', '\n\n')
-            #     batchlog+="{0}{1}{2}{3}{4}{5}{6}{7}{8}".format(runout["glpk_message"],'\n',runout["glpk_stdmsg"],'\n',runout["cbc_message"],'\n',runout["cbc_stdmsg"],'\n', '\n')
-            #     batchlog+="------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ {0}".format('\n')
-            #     if runout["status_code"] != 'success':
-            #         status = "Error"
-
-
-
-
-            ##########################################CUSOM THREAD IMPLEMENATATION
-            # for caserun in cases:
-            #     # batchlog+="Run dor case {0}, started at {1}{2}".format(caserun,dt, '\n')
-            #     batchlog+="Case: {0}{1}".format(caserun, '\n')
-            #     batchlog+="------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ {0}".format('\n')
-            #     #df = self.generateDatafile(caserun)
-            #     #runout = self.run(solver, caserun)
-
-
-            #     # thread = CustomThread(target=self.run, args=(solver, caserun ) )
-            #     # thread.start()
-            #     # threads.append(thread)
-
-
-
-            # # for thread in threads:
-            #     #runout = thread.join()
-            #     #runout = threads[caserun].join()
-
-            #     msg+="Case: {0}{1}{2}".format(caserun, runout["timer"], '\n')
-            #     # batchlog+="GLPK status {0}{1}{2}GLPK log {3}{4}{5}{6}CBC log {7}{8}{9}{10}{11}".format(runout["status_code"], runout["timer"],'\n',runout["glpk_message"],'\n',runout["glpk_stdmsg"],'\n',runout["cbc_message"],'\n',runout["cbc_stdmsg"],'\n', '\n\n')
-            #     batchlog+="{0}{1}{2}{3}{4}{5}{6}{7}{8}".format(runout["glpk_message"],'\n',runout["glpk_stdmsg"],'\n',runout["cbc_message"],'\n',runout["cbc_stdmsg"],'\n', '\n')
-            #     batchlog+="------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ {0}".format('\n')
-            #     if runout["status_code"] != 'success':
-            #         status = "Error"
-            response = {
-                "log": batchlog,
-                "msg": msg,
-                "status": status
-            }           
-            return response
-
-        except(IOError, IndexError):
-            raise IndexError
-        except OSError:
-            raise OSError
+        results = [self.run(solver.lower(), name) for name in cases]
+        return {
+            'status': 'Success' if all(r['status_code'] == 'success' for r in results) else 'Error',
+            'msg': '\n'.join(r['caserun'] + ': ' + r['timer'] for r in results),
+            'status_code': 'success' if all(r['status_code'] == 'success' for r in results) else 'error',
+            'message': '\n'.join(r['caserun'] + ': ' + r['timer'] for r in results),
+            'log': '\n'.join((r.get('glpk_message') or '') + '\n' + (r.get('cbc_message') or '') + '\n' + (r.get('highs_message') or '') for r in results),
+            'results': results,
+        }
 
     def run(self, solver, caserun, lock=None, highs_options=None):
-        cbc_out = None
-        glpk_out = None
-        #the interface polls /progress while this request is still blocking
-        Progress.start(self.case, caserun, solver,
-                       ['preparing data', 'generating matrix', 'solving',
-                        'writing result files', 'preparing charts'])
-        Progress.stage(self.case, caserun, 'preparing data')
+        from Classes.Case.RunService import execute
+        return execute(self, solver, caserun, highs_options)
 
-        try:
-            if lock:
-                lock.acquire(timeout=5)
-
-            start_time = time.time()
-            txtOut = ""
-
-            # ---- PRECOMPUTE PATHS ----
-            base = Path(Config.DATA_STORAGE, self.case, "res", caserun)
-            self.dataFile = base / "data.txt"
-            self.dataFile_processed = base / "data_processed.txt"
-            self.resFile = base / "results.txt"
-            self.logFile = base / "logfile.log"
-            self.logFileTxt = base / "logfile.txt"
-            self.lpFile = base / "lp.lp"
-            self.mpsFile = base / "lp.mps"
-            self.glpFile = base / "model.glp"
-            self.resPath = base
-
-            modelfile = str(self.osemosysFile.resolve())
-            dataFile_processed = str(Path(self.dataFile_processed).resolve())
-            lpFile = str(Path(self.lpFile).resolve())
-            glpFile = str(Path(self.glpFile).resolve())
-            # None rather than 0.0: a path that cannot recover the constant must not
-            # report that there is none
-            self.objectiveConstant = None
-            resFile = str(Path(self.resFile).resolve())
-
-
-            # glpsol_path = str(Path(self.glpkFolder, "glpsol.exe"))
-            # cbc_path = str(Path(self.cbcFolder, "cbc.exe"))
-
-            
-            glpk_cwd = self.glpkFolder if self.glpsol_is_bundled else None
-            cbc_cwd  = self.cbcFolder  if self.cbc_is_bundled  else None
-
-
-            if not Path(self.glpsol_path).exists():
-                raise FileNotFoundError(f"glpsol.exe not found in: {self.glpsol_path}")
-
-            if not Path(self.cbc_path).exists():
-                raise FileNotFoundError(f"cbc.exe not found in: {self.cbc_path}")
-
-            self.deleteCaseResultsJSON(caserun)
-
-            # =========================================================
-            # ---- GLPK / HiGHS (exe) / HiGHS (highspy) / mosox --------
-            # =========================================================
-            # All of these follow the same pipeline as the CBC option: the MathProg model
-            # is translated into a matrix file (glpsol -> LP, or mosox -> MPS), the chosen
-            # optimizer solves THAT file, and its solution is converted into CBC's solution
-            # format, so MUIO's existing parser, CSVs, pivot data and visualization work
-            # unchanged. Every option solves exactly the same problem, so results are
-            # comparable across solvers.
-            if solver in ("glpk", "highs", "highs-exe", "highs-mosox"):
-                logger.info(f"Preprocessing case {caserun}")
-                self.preprocessData(self.dataFile, self.dataFile_processed)
-                logger.info("PREPROCESSING DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
-                txtOut += f"Preprocessing time {time.time() - start_time:0.2f}s\n"
-
-                # ---------------- translate ----------------
-                Progress.stage(self.case, caserun, 'generating matrix')
-                translate_start = time.time()
-                if solver == "highs-mosox":
-                    matrixFile = self.mpsFile
-                    translator = "mosox (MathProg -> MPS)"
-                    trans_out = Mosox.translate(self.mosoxFolder, self.osemosysFile,
-                                                self.dataFile_processed, self.mpsFile)
-                else:
-                    matrixFile = self.lpFile
-                    translator = "glpsol (MathProg -> LP)"
-                    trans_out = subprocess.run(
-                        [self.glpsol_path, "--check", "-m", modelfile, "-d", dataFile_processed,
-                         "--wlp", lpFile, "--wglp", glpFile],
-                        cwd=glpk_cwd,
-                        text=True,
-                        capture_output=True
-                    )
-                translate_time = time.time() - translate_start
-                # Size and kind of the problem, taken from the translator's report and
-                # from the matrix, so every solver records the same figures
-                _rows, _cols, _nz = Progress.readTranslatorOutput(
-                    (getattr(trans_out, 'stdout', '') or '')
-                    + (getattr(trans_out, 'stderr', '') or ''))
-                _kind, _ints = Progress.readMatrixInfo(matrixFile)
-                Progress.setModelInfo(self.case, caserun, _rows, _cols, _nz,
-                                      _kind, _ints)
-                # mosox does not call glpsol, so there is no file to read. The constant
-                # depends only on the data, so one recovered earlier for the same data
-                # is reused.
-                if solver != "highs-mosox":
-                    self.objectiveConstant = self.readAndDropGlpFile(glpFile)
-                    self.rememberObjectiveConstant(base, self.objectiveConstant)
-                else:
-                    self.objectiveConstant = self.recallObjectiveConstant(base)
-                Progress.setObjectiveConstant(self.case, caserun, self.objectiveConstant)
-                logger.info("CREATINON OF LP/MPS FILE DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
-                txtOut += f"Creation of LP/MPS file {translate_time:0.2f}s\n"
-
-                if trans_out.returncode != 0:
-                    return {
-                        "cbc_message": None, "cbc_stdmsg": None,
-                        "glpk_message": trans_out.stdout, "glpk_stdmsg": trans_out.stderr,
-                        "highs_message": "",
-                        "timer": "Error during creation of the LP/MPS file - check the LP file log.",
-                        "status_code": "error", "caserun": caserun,
-                    }
-
-                # ---------------- solve + convert ----------------
-                Progress.stage(self.case, caserun, 'solving')
-                solve_start = time.time()
-                solver_log = ""
-                if solver == "glpk":
-                    # GLPK solves the exported LP (same problem as every other option) and
-                    # its printable report is converted into CBC's solution format
-                    solverName = "GLPK (glpsol simplex)"
-                    reportFile = str(Path(self.resPath, "glpk_report.txt").resolve())
-                    solve_out = subprocess.run(
-                        [self.glpsol_path, "--lp", str(Path(matrixFile).resolve()), "-o", reportFile],
-                        cwd=glpk_cwd, text=True, capture_output=True
-                    )
-                    solver_log = (solve_out.stdout or "") + (solve_out.stderr or "")
-                    if solve_out.returncode != 0 or not Path(reportFile).exists():
-                        solve_flag, solve_msg = "error", "GLPK failed to solve the LP file."
-                    else:
-                        status, objective, nrows, ncols = SolutionConverters.fromGlpkReport(reportFile, self.resFile)
-                        solve_flag = "success" if status.upper().startswith("OPTIMAL") else "warning"
-                        solve_msg = "   {} - objective value {:.8f}".format(
-                            "Optimal" if solve_flag == "success" else status, objective)
-
-                elif solver == "highs-exe":
-                    # standalone HiGHS executable (no Python binding involved)
-                    solverName = "HiGHS standalone exe (barrier + crossover)"
-                    solve_flag, solve_msg, solver_log = HighsSolver.solveWithExe(
-                        self.highsFolder, matrixFile, self.resFile, highs_options)
-
-                else:
-                    # in-process HiGHS through the Python binding
-                    solverName = "HiGHS (highspy, barrier + crossover)"
-                    solve_flag, solve_msg, solver_log = HighsSolver.solve(
-                        matrixFile, self.resFile, highs_options)
-
-                solve_time = time.time() - solve_start
-                # The outcome is recorded whether or not a solution was reached
-                _outcome, _objective = Progress.readSolveOutcome(solve_msg, solver_log)
-                Progress.setSolveOutcome(self.case, caserun, _outcome, _objective)
-                logger.info("SOLUTION DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
-                txtOut += f"Solve time {solve_time:0.2f}s\n"
-
-                # ---------------- results, CSVs, pivot data ----------------
-                if solve_flag == "success":
-                    Progress.stage(self.case, caserun, "writing result files")
-                    self.generateCSVfromCBC(self.dataFile, self.resFile, self.resPath)
-                    Progress.stage(self.case, caserun, 'preparing charts')
-                    logger.info("CSV DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
-                    txtOut += f"csv files extraction time {time.time() - start_time:0.2f}s\n"
-                    self.generateResultsViewer(caserun)
-                    logger.info("PIVOT TABLE DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
-                    txtOut += f"Pivot data preparation time {time.time() - start_time:0.2f}s\n"
-
-                total_time = time.time() - start_time
-                fixed_msg = ''
-                if self.objectiveConstant:
-                    fixed_msg = ' - Fixed cost not carried in the matrix: {:.2f} (added to results)'.format(
-                        self.objectiveConstant)
-                timer_msg = solve_msg + fixed_msg + ' - Solve: {:0.2f}s - Translation ({}): {:0.2f}s - Full run incl. CSVs: {:0.2f}s'.format(
-                    solve_time, 'mosox' if solver == 'highs-mosox' else 'glpsol', translate_time, total_time)
-                run_summary = (
-                    '==================== RUN SUMMARY ====================\n'
-                    + 'Case run             : {}\n'.format(caserun)
-                    + 'Solver               : {}\n'.format(solverName)
-                    + 'Translator           : {}\n'.format(translator)
-                    + 'LP/MPS creation time : {:0.2f} s\n'.format(translate_time)
-                    + 'Solve time           : {:0.2f} s\n'.format(solve_time)
-                    + 'Result               : {}\n'.format(solve_msg.strip())
-                    + ('Fixed cost (constant): {:.8f}\n'.format(self.objectiveConstant)
-                       if self.objectiveConstant else '')
-                    + 'Full run incl. CSVs  : {:0.2f} s\n'.format(total_time)
-                    + '=====================================================\n\n'
-                )
-                return {
-                    "cbc_message": None, "cbc_stdmsg": None,
-                    "glpk_message": trans_out.stdout, "glpk_stdmsg": trans_out.stderr,
-                    "highs_message": run_summary + solver_log,
-                    "timer": timer_msg,
-                    "status_code": solve_flag,
-                    "caserun": caserun,
-                }
-
-            # =======================================================
-            # ---------------------- CBC -----------------------------
-            # =======================================================
-            else:
-                logger.info(f"Preprocessing case {caserun}")
-                self.preprocessData(self.dataFile, self.dataFile_processed)
-                logger.info("PREPROCESSING DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
-                txtOut += f"Preprocessing time {time.time() - start_time:0.2f}s\n"
-
-                Progress.stage(self.case, caserun, 'generating matrix')
-                glpk_out = subprocess.run(
-                    [self.glpsol_path, "--check", "-m", modelfile, "-d", dataFile_processed,
-                     "--wlp", lpFile, "--wglp", glpFile],
-                    cwd=cbc_cwd,
-                    text=True,
-                    capture_output=True
-                )
-
-                logger.info("CREATINON OF LP FILE DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
-                txtOut += f"Creation of LP file {time.time() - start_time:0.2f}s\n"
-                _rows, _cols, _nz = Progress.readTranslatorOutput(
-                    (glpk_out.stdout or '') + (glpk_out.stderr or ''))
-                _kind, _ints = Progress.readMatrixInfo(lpFile)
-                Progress.setModelInfo(self.case, caserun, _rows, _cols, _nz,
-                                      _kind, _ints)
-                self.objectiveConstant = self.readAndDropGlpFile(glpFile)
-                self.rememberObjectiveConstant(base, self.objectiveConstant)
-                Progress.setObjectiveConstant(self.case, caserun, self.objectiveConstant)
-
-                Progress.stage(self.case, caserun, 'solving')
-                cbc_out = subprocess.run(
-                    [self.cbc_path, lpFile, "solve", "-printing", "all", "-solu", resFile],
-                    cwd=self.cbcFolder,
-                    text=True,
-                    capture_output=True
-                )
-                logger.info("SOLUTION DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
-                txtOut += f"Solve time {time.time() - start_time:0.2f}s\n"
-
-            # =======================================================
-            # ---------------- ERROR HANDLING ------------------------
-            # =======================================================
-
-            if (cbc_out and cbc_out.returncode != 0) or (glpk_out and glpk_out.returncode != 0):
-                
-                msg = {
-                    "cbc_message": cbc_out.stdout if cbc_out else None,
-                    "cbc_stdmsg": cbc_out.stderr if cbc_out else None,
-                    "glpk_message": glpk_out.stdout if glpk_out else None,
-                    "glpk_stdmsg": glpk_out.stderr if glpk_out else None,
-                    "highs_message": None,
-                    "timer": "Solver error — check logs.",
-                    "status_code": "error",
-                    "caserun": caserun,
-                }
-                logger.info(f"ERROR HANDLING {msg}")
-                return msg
-
-            # =======================================================
-            # --------------------- SUCCESS --------------------------
-            # =======================================================
-
-            msg = (cbc_out.stdout if cbc_out else glpk_out.stdout).splitlines()
-
-            statusFlag = "warning"
-            customMsg = ""
-
-            if any("Optimal" in s for s in msg):
-                matching = [s for s in msg if "Optimal" in s]
-                customMsg = customMsg + matching[0] + " - "
-                times = [s for s in msg if "Total time (CPU seconds):" in s]
-                customMsg = customMsg + times[0]
-                statusFlag = "success"
-
-            if any("infeasible" in s for s in msg):
-                matching = [s for s in msg if "infeasible" in s]
-                customMsg = customMsg + matching[0] + " - "
-                times = [s for s in msg if "Total time (CPU seconds):" in s]
-                customMsg = customMsg + times[0]
-                statusFlag = "warning"
-
-            if any("ERROR" in s for s in msg):
-                matching = [s for s in msg if "ERROR" in s]
-                customMsg = customMsg + matching[0] + " - "
-                times = [s for s in msg if "Total time (CPU seconds):" in s]
-                customMsg = customMsg + times[0]
-                statusFlag = "error"
-
-            _outcome, _objective = Progress.readSolveOutcome(
-                customMsg, "\n".join(msg))
-            Progress.setSolveOutcome(self.case, caserun, _outcome, _objective)
-
-            if self.objectiveConstant:
-                customMsg += ' - Fixed cost not carried in the matrix: {:.2f} (added to results)'.format(
-                    self.objectiveConstant)
-
-            if statusFlag == "success" and cbc_out:
-                Progress.stage(self.case, caserun, 'writing result files')
-                self.generateCSVfromCBC(self.dataFile, self.resFile, self.resPath)
-                logger.info("CSV DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
-                txtOut = txtOut + ("csv files extraction time {:0.2f} s;{}".format(time.time() - start_time, '\n'))
-                Progress.stage(self.case, caserun, 'preparing charts')
-                self.generateResultsViewer(caserun)
-                logger.info("PIVOT TABLE DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
-                txtOut = txtOut + ("Pivot data preparation time {:0.2f}s;{}".format(time.time() - start_time, '\n'))
-            
-            logger.info("MESSAGES DONE! --- %s seconds --- %s", time.time() - start_time, caserun)
-            txtOut = txtOut + ("Message preparation time {:0.2f}s;{}".format(time.time() - start_time, '\n'))
-            return {
-                "cbc_message": cbc_out.stdout if cbc_out else None,
-                "cbc_stdmsg": cbc_out.stderr if cbc_out else None,
-                "glpk_message": glpk_out.stdout if glpk_out else None,
-                "glpk_stdmsg": glpk_out.stderr if glpk_out else None,
-                "highs_message": None,
-                "timer": customMsg,
-                "status_code": statusFlag,
-                "caserun": caserun,
-            }
-
-        except Exception as ex:
-            logger.exception("Unhandled exception during solver execution")
-            raise
-        finally:
-            if lock:
-                lock.release()
-
-    def run_26022026( self, solver, caserun, lock=None ):
-        try:
-            caserunname = caserun
-            if lock is not None:
-                # self.caserunname = caserunname
-                # lock = {}
-                # lock[caserunname] = threading.Lock() 
-                lock.acquire()
-                caserunname = caserun
-
-            start_time = time.time()
-            txtOut = ""
-            self.dataFile = Path(Config.DATA_STORAGE, self.case, 'res',caserunname,'data.txt')
-            self.dataFile_processed = Path(Config.DATA_STORAGE, self.case, 'res',caserunname,'data_processed.txt')
-            self.resFile = Path(Config.DATA_STORAGE,self.case, 'res',caserunname,'results.txt')
-            self.logFile = Path(Config.DATA_STORAGE,self.case, 'res',caserunname,'logfile.log')
-            self.logFileTxt = Path(Config.DATA_STORAGE,self.case, 'res',caserunname,'logfile.txt')
-            self.lpFile = Path(Config.DATA_STORAGE,self.case, 'res',caserunname,'lp.lp')
-            self.resPath = Path(Config.DATA_STORAGE,self.case, 'res',caserunname)
-            
-            modelfile = '"{}"'.format(self.osemosysFile.resolve())
-            modelfile_original = '"{}"'.format(self.osemosysFileOriginal.resolve())
-            datafile = '"{}"'.format(self.dataFile.resolve())
-            datafile_processed = '"{}"'.format(self.dataFile_processed.resolve())
-            resultfile = '"{}"'.format(self.resFile.resolve())
-            logfile = '"{}"'.format(self.logFile.resolve())
-            logfiletxt = '"{}"'.format(self.logFileTxt.resolve())
-            lpfile = '"{}"'.format(self.lpFile.resolve())
-
-
-            
-
-            glpfolder =self.glpkFolder.resolve()
-            cbcfolder =self.cbcFolder.resolve()
-            # respath = self.resPath.resolve()
-            # resCBCPath = self.resCBCPath.resolve()
-
-            self.deleteCaseResultsJSON(caserunname)
-
-            if solver == 'glpk':
-                out = subprocess.run('glpsol -m ' + modelfile +' -d ' + datafile +' -o ' + resultfile, cwd=glpfolder,  capture_output=True, text=True, shell=True)
-            else:
-                #Matrix generation (creates an LP file with GLPK): glpsol --check -m [model].txt -d [data].txt --wlp [LPfile].lp
-                #Optimisation (solves LP file with CBC): cbc [LPfile].lp solve -solu [results].txt
-                #PREPROCESS data.txt
-                #subprocess.run('preprocess_data.py' + datafile + dataFile_processed)
-
-                logger.debug("Starting preprocessing step for case %s", caserunname)
-
-                self.preprocessData(self.dataFile, self.dataFile_processed)
-                #print("PREPROCESSING DONE! --- %s seconds --- %s" % (time.time() - start_time, caserunname))
-                logger.info("PREPROCESSING DONE! --- %s seconds --- %s", time.time() - start_time, caserunname)
-                txtOut = txtOut + ("Preprocessing time {:0.2f}s;{}".format(time.time() - start_time, '\n'))
-
-                #return output to variable preprocessed data file
-                glpk_out = subprocess.run(
-                    'glpsol --check -m ' + modelfile +' -d ' + datafile_processed +' --wlp ' + lpfile, cwd=glpfolder,  capture_output=True, text=True, shell=True)
-            
-
-                #glpk_out = subprocess.run('glpsol --check -m ' + modelfile +' -d ' + datafile_processed +' --wlp ' + lpfile, cwd=cbcfolder,  capture_output=True, text=True, shell=True)
-                
-
-                #original data file without preprocessing
-                #glpk_out = subprocess.run('glpsol --check -m ' + modelfile_original +' -d ' + datafile +' --wlp ' + lpfile, cwd=glpfolder,  capture_output=True, text=True, shell=True)
-                
-                #print("CREATINON OF LP FILE DONE! --- %s seconds --- %s" % (time.time() - start_time, caserunname))
-                logger.info("CREATINON OF LP FILE DONE! --- %s seconds --- %s", time.time() - start_time, caserunname)
-                txtOut = txtOut + ("Creation of LP file time {:0.2f}s;{}".format(time.time() - start_time, '\n'))
-
-
-                ####output to logfile.txt
-                #subprocess.run('glpsol --check -m ' + modelfile +' -d ' + datafile_processed +' --wlp ' + lpfile +'>'+  logfiletxt+'2>&1', cwd=glpfolder, text=True, shell=True)
-
-                # proc = subprocess.Popen('glpsol --check -m ' + modelfile +' -d ' + datafile_processed +' --wlp ' + lpfile, cwd=glpfolder, text=True, shell=True)
-                # try:
-                #     outs, errs = proc.communicate(timeout=25)
-                # except:
-                #     proc.kill()
-                #     outs, errs = proc.communicate()
-
-                #cbc_out = subprocess.run('cbc ' + lpfile +' -presolve off -postsolve on -logLevel 3 solve -printing all -solu '  + resultfile, cwd=cbcfolder,  capture_output=True, text=True, shell=True)
-                # prin
-                cbc_out = subprocess.run('cbc ' + lpfile +' solve -printing all -solu '  + resultfile, cwd=cbcfolder,  capture_output=True, text=True, shell=True)
-                # -printing all prints all constraints to result.txt
-                #print("SOLUTION DONE! --- %s seconds --- %s" % (time.time() - start_time, caserunname))
-                logger.info("SOLUTION DONE! --- %s seconds --- %s", time.time() - start_time, caserunname)
-                txtOut = txtOut + ("Solution time {:0.2f}s;{}".format(time.time() - start_time, '\n'))
-                ####output to lg file .log i .txt with errors
-                # out = subprocess.run('cbc ' + lpfile +' solve -solu '  + resultfile +'>'+ logfile, cwd=cbcfolder,  capture_output=True, text=True, shell=True)
-                #out = subprocess.run('cbc ' + lpfile +' solve -solu '  + resultfile +'>'+ logfiletxt +'2>&1', cwd=cbcfolder,  capture_output=True, text=True, shell=True)
-                
-            #CBC or GLPK return error
-            if cbc_out.returncode != 0 or glpk_out.returncode != 0:
-                response = {
-                    "cbc_message": cbc_out.stdout,
-                    "cbc_stdmsg": cbc_out.stderr,
-                    "glpk_message": glpk_out.stdout,
-                    "glpk_stdmsg": glpk_out.stderr,
-                    "timer": "Error occured either during cration of LP file or solution! Please check CBC and GLPK logs.",
-                    "status_code": "error",
-                    "caserun": caserunname
-                }
-            else:
-                msg = cbc_out.stdout.splitlines()
-
-                statusFlag = "warning"
-                customMsg = "   "
-                if any("Optimal" in s for s in msg):
-                    matching = [s for s in msg if "Optimal" in s]
-                    customMsg = customMsg + matching[0] + " - "
-                    times = [s for s in msg if "Total time (CPU seconds):" in s]
-                    customMsg = customMsg + times[0]
-                    statusFlag = "success"
-
-                if any("infeasible" in s for s in msg):
-                    matching = [s for s in msg if "infeasible" in s]
-                    customMsg = customMsg + matching[0] + " - "
-                    times = [s for s in msg if "Total time (CPU seconds):" in s]
-                    customMsg = customMsg + times[0]
-                    statusFlag = "warning"
-
-                if any("ERROR" in s for s in msg):
-                    matching = [s for s in msg if "ERROR" in s]
-                    customMsg = customMsg + matching[0] + " - "
-                    times = [s for s in msg if "Total time (CPU seconds):" in s]
-                    customMsg = customMsg + times[0]
-                    statusFlag = "error"
-
-                if statusFlag == "success":
-                    self.generateCSVfromCBC(self.dataFile, self.resFile, self.resPath)
-                    #print("CSV DONE! --- %s seconds --- %s" % (time.time() - start_time, caserunname))
-                    logger.info("CSV DONE! --- %s seconds --- %s", time.time() - start_time, caserunname)
-                    txtOut = txtOut + ("csv files extraction time {:0.2f} s;{}".format(time.time() - start_time, '\n'))
-                    
-                    self.generateResultsViewer(caserunname)
-                    #print("PIVOT TABLE DONE! --- %s seconds --- %s" % (time.time() - start_time, caserunname))
-                    logger.info("PIVOT TABLE DONE! --- %s seconds --- %s", time.time() - start_time, caserunname)
-                    txtOut = txtOut + ("Pivot data preparation time {:0.2f}s;{}".format(time.time() - start_time, '\n'))
-                    
-
-
-                #print("MESSAGES DONE! --- %s seconds --- %s" % (time.time() - start_time, caserunname))
-                logger.info("MESSAGES DONE! --- %s seconds --- %s", time.time() - start_time, caserunname)
-                txtOut = txtOut + ("Message preparation time {:0.2f}s;{}".format(time.time() - start_time, '\n'))
-
-                response = {
-                    "cbc_message": cbc_out.stdout,
-                    "cbc_stdmsg": cbc_out.stderr,
-                    "glpk_message": glpk_out.stdout,
-                    "glpk_stdmsg": glpk_out.stderr,
-                    "timer": customMsg,
-                    "status_code": statusFlag,
-                    "caserun": caserunname
-                } 
-
-           
-            if lock is not None:
-                lock.release()
-
-            return response
-            # urllib.request.urlretrieve(self.dataFile, dataFile)
-
-        except Exception as ex:
-            print(ex) # do whatever you want for debugging.
-            logger.exception("Unhandled exception during solver execution")
-            raise    # re-raise exception.
-        except(IOError, IndexError):
-            raise IndexError
-        except OSError:
-            raise OSError
-    
     @staticmethod
     def readObjectiveConstant(glp_path):
         """The objective's constant term, as glpsol's own format records it.
@@ -2639,58 +2051,6 @@ class DataFile(Osemosys):
             return 0.0
         except (OSError, ValueError, IndexError):
             return None
-
-    @staticmethod
-    def dataFingerprint(data_path):
-        """Identify the data a constant was computed from."""
-        import hashlib
-        try:
-            digest = hashlib.sha256()
-            with open(data_path, 'rb') as handle:
-                for chunk in iter(lambda: handle.read(1 << 20), b''):
-                    digest.update(chunk)
-            return digest.hexdigest()
-        except OSError:
-            return None
-
-    def rememberObjectiveConstant(self, base, value):
-        """Keep the constant beside the case, tied to the data it came from."""
-        import json
-        fingerprint = self.dataFingerprint(self.dataFile_processed)
-        if value is None or fingerprint is None:
-            return
-        try:
-            Path(base, 'objective_constant.json').write_text(
-                json.dumps({'data_sha256': fingerprint, 'constant': value}))
-        except OSError:
-            pass
-
-    def recallObjectiveConstant(self, base):
-        """The constant recovered earlier for this exact data, or None.
-
-        The value is used only when the data fingerprint matches, so a constant
-        computed from different data is never applied.
-        """
-        import json
-        fingerprint = self.dataFingerprint(self.dataFile_processed)
-        if fingerprint is None:
-            return None
-        try:
-            saved = json.loads(Path(base, 'objective_constant.json').read_text())
-        except (OSError, ValueError):
-            return None
-        if saved.get('data_sha256') == fingerprint:
-            return saved.get('constant')
-        return None
-
-    def readAndDropGlpFile(self, glp_path):
-        """Read the constant, then delete the file - it is large and single-use."""
-        value = self.readObjectiveConstant(glp_path)
-        try:
-            Path(glp_path).unlink()
-        except OSError:
-            pass
-        return value
 
     def generateCSVfromCBC(self, data_file, results_file, base_folder=os.getcwd()):
         try:
@@ -2716,6 +2076,8 @@ class DataFile(Osemosys):
             ###################################### parse optimal value from result.txt
             # Extract the optimal value from the header line
             optimal_value_header = df.columns[0]
+            if not optimal_value_header.startswith('Optimal - objective value'):
+                raise ValueError('Only an optimal solution can be published.')
             optimal_value = 0.0
             if 'Optimal - objective value' in optimal_value_header:
                 # Extract the value from the header line
@@ -2726,15 +2088,14 @@ class DataFile(Osemosys):
             constant = getattr(self, 'objectiveConstant', None)
             if constant is not None:
                 optimal_value += constant
-
-            ov = {
-                "r": ['RE1'],
-                "ObjectiveValue": [optimal_value]
-            }
-
-            #load data into a DataFrame object:
-            dfOV = pd.DataFrame(ov)
-            dfOV.to_csv(os.path.join(base_folder, 'csv', 'ObjectiveValue.csv'), index=None)
+                dfOV = pd.DataFrame({"r": ['RE1'], "ObjectiveValue": [optimal_value]})
+                dfOV.to_csv(os.path.join(base_folder, 'csv', 'ObjectiveValue.csv'), index=None)
+            else:
+                # Other outputs remain useful, but a matrix-only objective must not
+                # be presented as the complete system cost of a custom model.
+                File.writeFile({'total_cost': None, 'matrix_objective': optimal_value,
+                                'message': 'Objective constant unavailable for this custom model.'},
+                               Path(base_folder, 'cost_status.json'))
             ######################################## end optimal value parse    
             #                                      
             df.columns = ['temp']
@@ -2831,11 +2192,13 @@ class DataFile(Osemosys):
                         all_params[each] = all_params[each].rename(columns={'value':each})
                         all_params[each].to_csv(os.path.join(base_folder, 'csv', each+'.csv'), index=None)
 
-                    if each in self.DUALS_BY_NAME.keys():
+                    if each in self.DUALS_BY_NAME.keys() and getattr(self, 'dualsAvailable', True):
                         result_cols = []
 
                         rows = positions[each]
                         df_p = df.take(rows)
+                        if not df_p['dual'].notna().all():
+                            continue
                         setCols = self.DUALS_BY_NAME[each]["setrelation"]
                         df_p[setCols] = id_parts.take(rows).iloc[:, :len(setCols)].values
 
@@ -3103,7 +2466,7 @@ class DataFile(Osemosys):
     
     def generateResultsViewer(self, caserunname):
         try:
-            csvFolderPath = Path(Config.DATA_STORAGE,self.case,'res',caserunname, 'csv')
+            csvFolderPath = Path(getattr(self, '_execution_base', self.resultsPath / caserunname), 'csv')
 
             #CSV
             csvs = [f.name for f in os.scandir(csvFolderPath) ]
@@ -3120,7 +2483,7 @@ class DataFile(Osemosys):
             viewDirty = {}
             for csv in csvs:
                 #read csv file
-                csv_path = Path(Config.DATA_STORAGE,self.case,'res', caserunname, 'csv', csv)
+                csv_path = csvFolderPath / csv
                 if csv_path.is_file():
                     df = pd.read_csv(csv_path)
                     #without indent=2 the intermediate JSON text is a fraction of the size,
@@ -3137,7 +2500,7 @@ class DataFile(Osemosys):
                                 if groupKey in viewCache:
                                     viewData = viewCache[groupKey]
                                 else:
-                                    viewGroupPath = Path(Config.DATA_STORAGE,self.case,'view', groupKey + '.json')
+                                    viewGroupPath = Path(self.viewFolderPath, groupKey + '.json')
                                     if viewGroupPath.is_file():
                                         viewData = File.readFile(viewGroupPath)
                                     else:

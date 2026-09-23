@@ -96,7 +96,7 @@ class Mosox():
                     len(blocks), len(injected), ', '.join(injected) if injected else '-'))
 
     @staticmethod
-    def translate(mosox_folder, model_file, data_file, mps_file):
+    def translate(mosox_folder, model_file, data_file, mps_file, prepared=None):
         """prepare + `mosox compile` -> mps_file. Derived copies are written next
         to the data file (model_mosox.txt / data_mosox.txt in the run folder).
 
@@ -120,15 +120,16 @@ class Mosox():
             run_folder = Path(data_file).parent
             model_out = Path(run_folder, 'model_mosox.txt')
             data_out = Path(run_folder, 'data_mosox.txt')
-            summary = Mosox.prepare(model_file, data_file, model_out, data_out)
+            summary = (Mosox.prepare(model_file, data_file, model_out, data_out)
+                       if prepared is None else prepared)
         except Exception as ex:
             out.stderr = 'mosox prepare failed: {}'.format(ex)
             return out
 
-        cmd = '"{}" compile "{}" "{}" -o "{}"'.format(
-            mosox_exe.resolve(), Path(model_out).resolve(), Path(data_out).resolve(),
-            Path(mps_file).resolve())
-        proc = subprocess.run(cmd, cwd=mosox_folder, capture_output=True, text=True, shell=True)
+        cmd = [str(mosox_exe.resolve()), 'compile', str(model_out.resolve()),
+               str(data_out.resolve()), '-o', str(Path(mps_file).resolve())]
+        Path(mps_file).unlink(missing_ok=True)
+        proc = subprocess.run(cmd, cwd=mosox_folder, capture_output=True, text=True)
         out.returncode = proc.returncode
         out.stdout = summary + '\n' + proc.stdout
         out.stderr = proc.stderr

@@ -1,12 +1,16 @@
 import shutil
-from unittest import case
 from flask import Blueprint, request, jsonify, send_file, after_this_request
 from zipfile import ZipFile
 from pathlib import Path
 from werkzeug.utils import secure_filename
 import os, time, json, glob
 
-from threading import Thread
+import tempfile
+import uuid
+import re
+from zipfile import BadZipFile
+from Classes.Base.CaseArchive import extract_case
+from Classes.Base.SafePaths import child, component, within
 
 from Classes.Case.HelpersClass import Helpers
 from Classes.Base import Config
@@ -16,11 +20,11 @@ upload_api = Blueprint('UploadRoute', __name__)
 
 #File extension checking
 def allowed_filename(filename):
-    return '.' in filename and filename.rsplit('.',1)[1] in Config.ALLOWED_EXTENSIONS
+    return '.' in filename and filename.rsplit('.',1)[1].lower() in Config.ALLOWED_EXTENSIONS
 
 #File extension checking
 def allowed_filename_xls(filename):
-    return '.' in filename and filename.rsplit('.',1)[1] in Config.ALLOWED_EXTENSIONS_XLS
+    return '.' in filename and filename.rsplit('.',1)[1].lower() in Config.ALLOWED_EXTENSIONS_XLS
 
 def download_dir(prefix, local, bucket, client):
     """
@@ -95,8 +99,9 @@ def upload_dir(s3, localDir, awsInitDir, bucketName, tag, prefix='\\'):
             # S3.resource.meta.client.upload_file(FullfileName, bucketName, awsPath)
             s3.resource.meta.client.upload_file(FullfileName, bucketName, awsPath)
 
-def updateTimeslices(casename):
-    genDataPath = Path(Config.DATA_STORAGE, casename, 'genData.json')
+def updateTimeslices(casename, storage=None):
+    storage = storage or Config.DATA_STORAGE
+    genDataPath = Path(storage, casename, 'genData.json')
     genData = File.readParamFile(genDataPath)
     ns = int(genData["osy-ns"])
     nd = int(genData["osy-dt"])
@@ -124,31 +129,34 @@ def updateTimeslices(casename):
             genData["osy-ts"].append(chunk)
     File.writeFile( genData, genDataPath)
     #rename json files with timeslices
-    RYTsPath = Path(Config.DATA_STORAGE, casename, 'RYTs.json')
+    RYTsPath = Path(storage, casename, 'RYTs.json')
     RYTsPath.write_text(RYTsPath.read_text().replace('YearSplit', 'TsId'))
-    RYTTsPath = Path(Config.DATA_STORAGE, casename, 'RYTTs.json')
+    RYTTsPath = Path(storage, casename, 'RYTTs.json')
     RYTTsPath.write_text(RYTTsPath.read_text().replace('Timeslice', 'TsId'))
-    RYCTsPath = Path(Config.DATA_STORAGE, casename, 'RYCTs.json')
+    RYCTsPath = Path(storage, casename, 'RYCTs.json')
     RYCTsPath.write_text(RYCTsPath.read_text().replace('Timeslice', 'TsId'))
 
-def updateStorageSet(casename):
-    genDataPath = Path(Config.DATA_STORAGE, casename, 'genData.json')
+def updateStorageSet(casename, storage=None):
+    storage = storage or Config.DATA_STORAGE
+    genDataPath = Path(storage, casename, 'genData.json')
     genData = File.readParamFile(genDataPath)
 
     genData["osy-stg"] = []
 
     File.writeFile( genData, genDataPath)
 
-def updateGenData(casename, genData):
-    genDataPath = Path(Config.DATA_STORAGE, casename, 'genData.json')
+def updateGenData(casename, genData, storage=None):
+    storage = storage or Config.DATA_STORAGE
+    genDataPath = Path(storage, casename, 'genData.json')
 
     genData["osy-indicators"] = []
 
     File.writeFile( genData, genDataPath)
 
-def updateViewDefintions(casename, genData):
+def updateViewDefintions(casename, genData, storage=None):
+    storage = storage or Config.DATA_STORAGE
 
-    viewDataPath = Path(Config.DATA_STORAGE,casename,'view','viewDefinitions.json')
+    viewDataPath = Path(storage,casename,'view','viewDefinitions.json')
 
     
     if not viewDataPath.exists():
@@ -158,7 +166,7 @@ def updateViewDefintions(casename, genData):
         viewDefExisting = File.readParamFile(viewDataPath)
 
 
-    # configPath = Path(Config.DATA_STORAGE, 'Variables.json')
+    # configPath = Path(storage, 'Variables.json')
     # vars = File.readParamFile(configPath)
 
     ##########
@@ -208,8 +216,9 @@ def updateViewDefintions(casename, genData):
     }
     File.writeFile( viewData, viewDataPath)
 
-def updateTimeslices_OnlyTs(casename):
-    genDataPath = Path(Config.DATA_STORAGE, casename, 'genData.json')
+def updateTimeslices_OnlyTs(casename, storage=None):
+    storage = storage or Config.DATA_STORAGE
+    genDataPath = Path(storage, casename, 'genData.json')
     genData = File.readParamFile(genDataPath)
     ns = int(genData["osy-ns"])
     nd = int(genData["osy-dt"])
@@ -225,477 +234,132 @@ def updateTimeslices_OnlyTs(casename):
             genData["osy-ts"].append(chunk)
     File.writeFile( genData, genDataPath)
     #rename json files with timeslices
-    RYTsPath = Path(Config.DATA_STORAGE, casename, 'RYTs.json')
+    RYTsPath = Path(storage, casename, 'RYTs.json')
     RYTsPath.write_text(RYTsPath.read_text().replace('YearSplit', 'TsId'))
-    RYTTsPath = Path(Config.DATA_STORAGE, casename, 'RYTTs.json')
+    RYTTsPath = Path(storage, casename, 'RYTTs.json')
     RYTTsPath.write_text(RYTTsPath.read_text().replace('Timeslice', 'TsId'))
-    RYCTsPath = Path(Config.DATA_STORAGE, casename, 'RYCTs.json')
+    RYCTsPath = Path(storage, casename, 'RYCTs.json')
     RYCTsPath.write_text(RYCTsPath.read_text().replace('Timeslice', 'TsId'))
-##############################################################Multithreading example#########################3
-class Download(Thread):
-    def __init__(self, request, zippedFile):
-        Thread.__init__(self)
-        self.request = request
-        self.zippedFile = zippedFile
-
-    def run(self):
-        print("wait few seconds for download to finish")
-        time.sleep(20)
-        #print(self.request)
-        #remove zipped file
-        os.remove(self.zippedFile)
-        print("Deletion of zip archive done!")
+def runtime_dir():
+    path = Config.ROOT_DIR / '.runtime'
+    path.mkdir(exist_ok=True)
+    return path
 
 
-@upload_api.route('/myfunc', methods=["GET", "POST"])
-def myfunc():
-        thread_a = Download(request.__copy__())
-        thread_a.start()
-        return "Processing in background", 200
-
-@upload_api.route("/backupCase", methods=['GET'])
+@upload_api.route('/backupCase', methods=['GET'])
 def backupCase():
-    try:    
-        #case = request.form['case']
-        #case = request.json['casename']
-        case = request.args.get('case')
+    case = component(request.args.get('case'))
+    case_path = child(Config.DATA_STORAGE, case)
+    if not case_path.is_dir():
+        raise FileNotFoundError('Case does not exist.')
+    stream = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, dir=runtime_dir())
+    with ZipFile(stream, 'w') as zipped:
+        for path in case_path.rglob('*'):
+            if path.is_file() and path.name != 'lp.lp':
+                within(case_path, path.relative_to(case_path))
+                if any(part.startswith('.') for part in path.relative_to(case_path).parts):
+                    continue
+                zipped.write(path, str(Path('WebAPP', 'DataStorage', case) / path.relative_to(case_path)))
+    stream.seek(0)
+    response = send_file(stream, download_name=case + '.zip', as_attachment=True)
+    response.call_on_close(stream.close)
+    return response
 
-        casePath = Path('WebAPP', 'DataStorage',case)
-        zippedFile = Path('WebAPP', 'DataStorage', case+'.zip')
-
-        '''File system data storage'''
-        with ZipFile(zippedFile, 'w') as zipObj:
-            # Iterate over all the files in directory
-            for folderName, subfolders, filenames in os.walk(str(casePath)):
-
-                for filename in filenames:
-                    if filename != 'lp.lp':
-                        #create complete filepath of file in directory
-                        filePath = os.path.join(folderName, filename)
-                        # Add file to zip
-                        zipObj.write(filePath)      
-
-            #osemosys 2.1 backup only input files
-            # for filename in os.listdir(str(casePath)):
-            #     folderName = os.path.join(str(casePath))
-            #     if os.path.isfile(os.path.join(folderName, filename)):
-            #         if filename != 'data.txt':
-            #             #create complete filepath of file in directory
-            #             filePath = os.path.join(folderName, filename)
-            #             # Add file to zip
-            #             zipObj.write(filePath)   
-
-        thread_a = Download(request.__copy__(), zippedFile)
-        thread_a.start()
-
-        return send_file(zippedFile.resolve(), as_attachment=True)
-
-    except(IOError):
-        return jsonify('No existing cases!'), 404
-    except OSError:
-        raise OSError
-
-@upload_api.route('/uploadCaseUnchunked_old', methods=['POST'])
-def uploadCaseUnchunked_old():
-    try:        
-        msg = []
-        submitted_storage =  request.files.to_dict()
-        for files in submitted_storage.items():
-            file = files[1]
-            submitted_file = file.filename
-            
-            case = os.path.splitext(submitted_file)[0]
-
-            if submitted_file and allowed_filename(submitted_file):
-                filename = secure_filename(submitted_file)
-                #spasiti zip u data storage
-                file.save(os.path.join(Config.DATA_STORAGE, filename))
-                #zipfiles = []
-                with ZipFile(os.path.join(Config.DATA_STORAGE, filename)) as zf:
-                    errorcode = 1
-                    for zippedfile in zf.namelist():
-                        # one = zippedfile
-                        # two = Path(zippedfile)
-                        # name = two.name
-                        #zipfiles.append(Path(zippedfile).name)
-                        zippedfilepath = Path(zippedfile)
-                        zippedfilename = zippedfilepath.name
-                        casename = zippedfilepath.parent.name
-                        if 'genData.json' == zippedfilename:
-                            errorcode = 0
-                            
-                            if not os.path.exists(Path(Config.DATA_STORAGE,casename)):
-                                data = json.loads(zf.read(zippedfile).decode('ISO-8859-1'))
-                                #name = data['else-version']
-                                name = data.get('osy-version', None)
-
-                                if name == '1.0' or name == '2.0':
-                                    zf.extractall(os.path.join(Config.EXTRACT_FOLDER))
-
-                                    #add res view folders with json default files
-                                    configPath = Path(Config.DATA_STORAGE, 'Variables.json')
-                                    vars = File.readParamFile(configPath)
-                                    viewDef = {}
-                                    for group, lists in vars.items():
-                                        for list in lists:
-                                            viewDef[list['id']] = []
-
-                                    resPath = Path(Config.DATA_STORAGE,case,'res')
-                                    viewPath = Path(Config.DATA_STORAGE,case,'view')
-                                    resDataPath = Path(Config.DATA_STORAGE,case,'view','resData.json')
-                                    viewDataPath = Path(Config.DATA_STORAGE,case,'view','viewDefinitions.json')
-
-                                    # remove res and view folder if ver 1.0
-                                    if os.path.exists(resPath):
-                                        shutil.rmtree(resPath)
-
-                                    if os.path.exists(viewPath):
-                                        shutil.rmtree(viewPath)
-
-                                    
-                                    os.makedirs(resPath, mode=0o777, exist_ok=False)
-                                    os.makedirs(viewPath, mode=0o777, exist_ok=False)
-                                    resData = {
-                                        "osy-cases":[]
-                                    }
-                                    File.writeFile( resData, resDataPath)
-
-                                    viewData = {
-                                        "osy-views": viewDef
-                                    }
-                                    File.writeFile( viewData, viewDataPath)
-
-                                    #update for dynamic timeslicec
-                                    updateTimeslices(casename)
-                                    updateStorageSet(casename)
-                                    
-                                    msg.append({
-                                        "message": "Model " + casename +" have been uploaded!",
-                                        "status_code": "success",
-                                        "casename": casename
-                                    })
-                                elif name == '3.0': 
-                                    #potrebno dodati tech groups
-                                    #case = data.get('osy-casename', None)
-                                    zf.extractall(os.path.join(Config.EXTRACT_FOLDER))
-                                    genDataPath = Path(Config.DATA_STORAGE, casename, 'genData.json')
-                                    genData = File.readParamFile(genDataPath)
-                                    genData["osy-techGroups"] = []
-                                    for dic in genData["osy-tech"]:
-                                        dic["TG"] =[]
-                                    File.writeFile( genData, genDataPath)
-                 
-                                    #update for dynamic timeslicec
-                                    updateTimeslices(casename)
-                                    updateStorageSet(casename)
-                                    updateViewDefintions(casename)
-
-                                    msg.append({
-                                        "message": "Model " + casename +" have been uploaded!",
-                                        "status_code": "success",
-                                        "casename": casename
-                                    })
-                                elif name == '4.0' or name == '4.5' or name == '4.9': 
-                                    zf.extractall(os.path.join(Config.EXTRACT_FOLDER))
-                                    # potrebno updatevoati YearSplit u verziji 5.0 su dinamicki
-                                    #update for dynamic timeslicec
-                                    updateTimeslices(casename)
-                                    updateStorageSet(casename)
-                                    updateViewDefintions(casename)
-                                    #u 4.5 ver dodani paramteri i varijable
-                                    # u 4.9 versiji dodano param DiscountRateIdv
-                                    msg.append({
-                                        "message_warning": "You have restored a model created in a earlier version of this UI. In order to update to the current version click <b>Update model</b> on the configuration page.",
-                                        "message": "Model " + casename +" have been uploaded!",
-                                        "status_code": "warning",
-                                        "casename": casename
-                                    })
-
-                                # elif name == '4.9': 
-                                #     zf.extractall(os.path.join(Config.EXTRACT_FOLDER))
-                                #     # potrebno updatevoati YearSplit u verziji 5.0 su dinamicki
-                                #     #update for dynamic timeslicec
-                                #     updateTimeslices(casename)
-
-                                #     msg.append({
-                                #             "message": "Model " + casename +" have been uploaded!",
-                                #             "status_code": "success",
-                                #             "casename": casename
-                                #         })
-
-                                elif name == '5.0': 
-                                    zf.extractall(os.path.join(Config.EXTRACT_FOLDER))
-                                    updateViewDefintions(casename)
-                                    msg.append({
-                                        "message": "Model " + casename +" have been uploaded!",
-                                        "status_code": "success",
-                                        "casename": casename
-                                    })
-                                else:
-                                    msg.append({
-                                        "message": "Model " + casename +" is not valid OSEMOSYS ver 1.0, 2.0, 3.0, 4.0 or 5.0 model!",
-                                        "status_code": "error"
-                                    })
-                            else:
-                                msg.append({
-                                    "message": "Model " + casename + " already exists!",
-                                    "status_code": "warning"
-                                })
-                            
-                    if errorcode == 1:
-                        msg.append({
-                            "message": "ZIP archive " + case +" is not valid archive!",
-                            "status_code": "error"
-                        })
-                os.remove(os.path.join(Config.DATA_STORAGE, filename))
-        
-        response = {
-            "response" :msg
-        }
-
-        return jsonify(response), 200
-    except(IOError):
-        raise IOError
-    except OSError:
-        raise OSError
 
 def handle_full_zip(file, filepath=None):
-    msg = []
+    # Migrate a private copy. Existing cases and application code are never extraction targets.
+    with tempfile.TemporaryDirectory(prefix='import-', dir=runtime_dir()) as directory:
+        staging = within(runtime_dir(), Path(directory).name)
+        if filepath is None:
+            if file is None or not allowed_filename(file.filename or ''):
+                raise ValueError('Select a ZIP case archive.')
+            filepath = staging / 'upload.zip'
+            file.save(filepath)
+        try:
+            case, case_path = extract_case(filepath, staging / 'cases')
+        except BadZipFile as error:
+            raise ValueError('The uploaded file is not a valid ZIP archive.') from error
+        destination = child(Config.DATA_STORAGE, case)
+        if destination.exists():
+            return jsonify(response=[{'status_code': 'warning', 'message': 'Case already exists: ' + case}]), 200
+        gen = File.readFile(case_path / 'genData.json')
+        version = gen.get('osy-version')
+        if version not in ('1.0', '2.0', '3.0', '4.0', '4.5', '4.9', '5.0', '5.6'):
+            raise ValueError('Unsupported case version: ' + str(version))
+        gen['osy-casename'] = case
+        if not isinstance(gen.get('osy-tech'), list):
+            raise ValueError('Case technology definitions are missing or invalid.')
+        gen.setdefault('osy-indicators', [])
+        File.writeFile(gen, case_path / 'genData.json')
+        storage = case_path.parent
+        (case_path / 'view').mkdir(exist_ok=True)
+        (case_path / 'res').mkdir(exist_ok=True)
+        if not (case_path / 'view' / 'resData.json').exists():
+            File.writeFile({'osy-cases': []}, case_path / 'view' / 'resData.json')
+        if version in ('1.0', '2.0', '3.0', '4.0', '4.5', '4.9'):
+            updateTimeslices(case, storage)
+            updateStorageSet(case, storage)
+        gen = File.readFile(case_path / 'genData.json')
+        if version in ('1.0', '2.0', '3.0'):
+            gen.setdefault('osy-techGroups', [])
+            for technology in gen['osy-tech']:
+                technology.setdefault('TG', [])
+        gen.setdefault('osy-indicators', [])
+        File.writeFile(gen, case_path / 'genData.json')
+        updateViewDefintions(case, gen, storage)
+        # Validate JSON before publication, including filenames stored in the run index.
+        for path in case_path.rglob('*.json'):
+            File.readFile(path)
+        runs = File.readFile(case_path / 'view' / 'resData.json')
+        for run in runs.get('osy-cases', []):
+            component(run['Case'])
+        os.rename(case_path, destination)
+    return jsonify(response=[{'status_code': 'success', 'message': 'Case imported: ' + case, 'casename': case}]), 200
 
-    # Ako je file objekat (upload iz browsera)
-    if filepath is None:
-        submitted_file = file.filename
-        filepath = os.path.join(Config.DATA_STORAGE, submitted_file)
-        file.save(filepath)
-    else:
-        submitted_file = os.path.basename(filepath)
-
-    case = os.path.splitext(submitted_file)[0]
-
-    if submitted_file and allowed_filename(submitted_file):
-        filename = secure_filename(submitted_file)
-
-        with ZipFile(filepath) as zf:
-            errorcode = 1
-
-
-            # --- Find first genData.json entry (single pass) ---
-            target_info = next(
-                (zi for zi in zf.infolist() if Path(zi.filename).name == "genData.json"),
-                None
-            )
-
-            if not target_info:
-                # No genData.json at all
-                msg.append({
-                    "message": f"ZIP archive {case} is not valid archive!",
-                    "status_code": "error"
-                })
-                return jsonify({"response": msg}), 200
-
-            #for zippedfile in zf.namelist():
-
-            zippedfilepath = Path(target_info.filename)
-            zippedfilename = zippedfilepath.name
-            casename = zippedfilepath.parent.name
-            if 'genData.json' == zippedfilename:
-                errorcode = 0
-                if not os.path.exists(Path(Config.DATA_STORAGE,casename)):
-                    data = json.loads(zf.read(target_info).decode('ISO-8859-1'))
-                    name = data.get('osy-version', None)
-
-
-                    # --------------------------- 
-                    #     TVOJA ORIGINALNA LOGIKA
-                    # ---------------------------
-                    if name == '1.0' or name == '2.0':
-                        zf.extractall(os.path.join(Config.EXTRACT_FOLDER))
-
-                        ##dio za update ViewDefintions
-                        #configPath = Path(Config.DATA_STORAGE, 'Variables.json')
-                        # vars = File.readParamFile(configPath)
-                        # viewDef = {}
-
-                        # for group, lists in vars.items():
-                        #     for list in lists:
-                        #         viewDef[list['id']] = []
-                        #viewDataPath = Path(Config.DATA_STORAGE,case,'view','viewDefinitions.json')
-                        #viewData = {"osy-views": viewDef}
-                        #File.writeFile(viewData, viewDataPath)
-
-                        genDataPath = Path(Config.DATA_STORAGE, casename, 'genData.json')
-                        genData = File.readParamFile(genDataPath)
-
-                        resPath = Path(Config.DATA_STORAGE,casename,'res')
-                        viewPath = Path(Config.DATA_STORAGE,casename,'view')
-                        resDataPath = Path(Config.DATA_STORAGE,case,'view','resData.json')
-                        
-                        if os.path.exists(resPath):
-                            shutil.rmtree(resPath)
-                        if os.path.exists(viewPath):
-                            shutil.rmtree(viewPath)
-                        os.makedirs(resPath, mode=0o777, exist_ok=False)
-                        os.makedirs(viewPath, mode=0o777, exist_ok=False)
-                        resData = {"osy-cases":[]}
-                        File.writeFile(resData, resDataPath)
-
-
-
-                        updateTimeslices(casename)
-                        updateStorageSet(casename)
-                        updateGenData(casename, genData)
-                        updateViewDefintions(casename, genData)
-                        
-
-                        msg.append({
-                            "message": "Model " + casename +" have been uploaded!",
-                            "status_code": "success",
-                            "casename": casename
-                        })
-                    elif name == '3.0':
-                        zf.extractall(os.path.join(Config.EXTRACT_FOLDER))
-                        genDataPath = Path(Config.DATA_STORAGE, casename, 'genData.json')
-                        genData = File.readParamFile(genDataPath)
-                        genData["osy-techGroups"] = []
-                        for dic in genData["osy-tech"]:
-                            dic["TG"] = []
-                        File.writeFile(genData, genDataPath)
-                        updateTimeslices(casename)
-                        updateStorageSet(casename)
-                        updateGenData(casename, genData)
-                        updateViewDefintions(casename, genData)
-                        
-                        msg.append({
-                            "message": "Model " + casename +" have been uploaded!",
-                            "status_code": "success",
-                            "casename": casename
-                        })
-                    elif name in ['4.0', '4.5', '4.9']:
-                        zf.extractall(os.path.join(Config.EXTRACT_FOLDER))
-                        genDataPath = Path(Config.DATA_STORAGE, casename, 'genData.json')
-                        genData = File.readParamFile(genDataPath)
-                        updateTimeslices(casename)
-                        updateStorageSet(casename)
-                        updateGenData(casename, genData)
-                        updateViewDefintions(casename, genData)
-                        msg.append({
-                            "message_warning": "You have restored a model created in a earlier version...",
-                            "message": "Model " + casename +" have been uploaded!",
-                            "status_code": "warning",
-                            "casename": casename
-                        })
-                    elif name == '5.0':
-                        zf.extractall(os.path.join(Config.EXTRACT_FOLDER))
-                        genDataPath = Path(Config.DATA_STORAGE, casename, 'genData.json')
-                        genData = File.readParamFile(genDataPath)
-                        updateGenData(casename, genData)
-                        updateViewDefintions(casename, genData)
-
-                        msg.append({
-                            "message": "Model " + casename +" have been uploaded!",
-                            "status_code": "success",
-                            "casename": casename
-                        })
-                    elif name == '5.6':
-                        zf.extractall(os.path.join(Config.EXTRACT_FOLDER))
-                        genDataPath = Path(Config.DATA_STORAGE, casename, 'genData.json')
-                        genData = File.readParamFile(genDataPath)
-                        updateViewDefintions(casename, genData)
-                        msg.append({
-                            "message": "Model " + casename +" have been uploaded!",
-                            "status_code": "success",
-                            "casename": casename
-                        })
-                    else:
-                        msg.append({
-                            "message": "Model " + casename +" is not valid OSEMOSYS!",
-                            "status_code": "error"
-                        })
-
-                else:
-                    msg.append({
-                        "message": "Model " + casename + " already exists!",
-                        "status_code": "warning"
-                    })
-
-            if errorcode == 1:
-                msg.append({
-                    "message": "ZIP archive " + case +" is not valid archive!",
-                    "status_code": "error"
-                })
-
-        os.remove(filepath)
-
-    return jsonify({"response": msg}), 200
 
 @upload_api.route('/uploadCase', methods=['POST'])
 def uploadCase():
+    file = request.files.get('file')
+    identifier = request.form.get('dzuuid')
+    if identifier is None:
+        return handle_full_zip(file)
+    if not re.fullmatch(r'[A-Za-z0-9-]{1,80}', identifier):
+        raise ValueError('Invalid upload identifier.')
+    if file is None:
+        raise ValueError('Missing upload chunk.')
+    index = int(request.form.get('dzchunkindex', '-1'))
+    count = int(request.form.get('dztotalchunkcount', '0'))
+    if not 0 <= index < count <= 10000:
+        raise ValueError('Invalid chunk index or count.')
+    folder = child(runtime_dir(), 'chunks', identifier)
+    folder.mkdir(parents=True, exist_ok=True)
+    meta = folder / 'metadata.json'
+    if meta.exists() and File.readFile(meta)['count'] != count:
+        raise ValueError('Chunk count changed during upload.')
+    File.writeFile({'count': count}, meta)
+    temporary = folder / ('part-' + str(index))
+    file.save(temporary)
+    os.replace(temporary, folder / ('chunk-' + str(index)))
+    received = sum((folder / ('chunk-' + str(i))).is_file() for i in range(count))
+    if received < count:
+        return jsonify(status='received {}/{}'.format(received, count)), 200
+    final_zip = folder / 'upload.zip'
+    with final_zip.open('wb') as output:
+        total = 0
+        for i in range(count):
+            chunk = folder / ('chunk-' + str(i))
+            total += chunk.stat().st_size
+            if total > 8 * 1024 ** 3:
+                raise ValueError('Upload exceeds 8 GiB.')
+            with chunk.open('rb') as source:
+                shutil.copyfileobj(source, output, 1024 * 1024)
     try:
-        # -------------------------------
-        # 1) Primanje Dropzone chunk meta
-        # -------------------------------
-        dz_uuid = request.form.get("dzuuid")
-        dz_chunk_index = request.form.get("dzchunkindex")
-        dz_total_chunks = request.form.get("dztotalchunkcount")
-        file = request.files.get("file")
+        return handle_full_zip(None, final_zip)
+    finally:
+        within(runtime_dir(), folder.relative_to(runtime_dir()))
+        shutil.rmtree(folder)
 
 
-        # Ako nije chunked upload (chrome browser dev mode)
-        if dz_uuid is None:
-            # ==========================
-            #     TVOJ ORIGINALNI KOD
-            # ==========================
-            return handle_full_zip(file)
-
-        # Pretvaranje u int
-        dz_chunk_index = int(dz_chunk_index)
-        dz_total_chunks = int(dz_total_chunks)
-
-        # -------------------------------
-        # 2) Snimi chunk
-        # -------------------------------
-        chunk_dir = os.path.join(Config.DATA_STORAGE, "_chunks", dz_uuid)
-        os.makedirs(chunk_dir, exist_ok=True)
-
-        chunk_path = os.path.join(chunk_dir, f"chunk_{dz_chunk_index}")
-        file.save(chunk_path)
-
-        # -------------------------------
-        # 3) Provjeri jesu li stigli svi
-        # -------------------------------
-        chunks_received = len(os.listdir(chunk_dir))
-
-        if chunks_received < dz_total_chunks:
-            return jsonify({"status": f"received {chunks_received}/{dz_total_chunks}"}), 200
-
-        # -------------------------------
-        # 4) Spajanje ZIP fajla
-        # -------------------------------
-        final_zip = os.path.join(Config.DATA_STORAGE, f"{dz_uuid}.zip")
-
-        with open(final_zip, "wb") as merged:
-            for i in range(dz_total_chunks):
-                part_path = os.path.join(chunk_dir, f"chunk_{i}")
-                with open(part_path, "rb") as part:
-                    merged.write(part.read())
-
-        # Očisti chunk folder
-        shutil.rmtree(chunk_dir)
-
-        # Now remove parent folder if it is empty
-        parent = os.path.dirname(chunk_dir)
-        if os.path.exists(parent) and not os.listdir(parent):
-            os.rmdir(parent)
-
-        # -------------------------------
-        # 5) Pokreni TVOJ originalni ZIP handler
-        # -------------------------------
-        #return handle_full_zip(open(final_zip, "rb"), final_zip)
-        return handle_full_zip(None, final_zip) 
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    
 @upload_api.route('/uploadXls', methods=['POST'])
 def uploadXls():
     try: 
@@ -706,6 +370,7 @@ def uploadXls():
             submitted_file = file.filename
             
             case = os.path.splitext(submitted_file)[0]
+            filename = secure_filename(submitted_file)
 
             if submitted_file and allowed_filename_xls(submitted_file):
                 filename = secure_filename(submitted_file)

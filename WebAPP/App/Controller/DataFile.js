@@ -474,6 +474,9 @@ export default class DataFile {
 
         $("#osy-run").off('click');
         $("#osy-run").on('click', function (event) {
+            const runningCase = model.casename;
+            const runningName = model.cs;
+            $('#osy-run').prop('disabled', true);
             Pace.restart();
             Message.loaderStart('Optimization in process!')
 
@@ -500,10 +503,13 @@ export default class DataFile {
                 ? window.readHighsOptions() : null;
             //the loading circle becomes the progress display: it names the stage,
             //counts its seconds, and shows how far the run has got
-            startRunProgress(model.casename, model.cs);
-            Osemosys.run(model.casename, solver, model.cs, highsOptions)
+            startRunProgress(runningCase, runningName);
+            Osemosys.run(runningCase, solver, runningName, highsOptions)
             .then(response => {
-                stopRunProgress(model.casename, model.cs);
+                stopRunProgress(runningCase, runningName);
+                $('#osy-run').prop('disabled', false);
+                if (model.casename !== runningCase || model.cs !== runningName) { Message.loaderEnd(); return; }
+                response.timer = $('<div>').text(response.timer || '').html();
                 Message.clearMessages();
                 //console.log('response ',response)
                 if (response.status_code == "success") {
@@ -514,13 +520,13 @@ export default class DataFile {
                     $(".batchOutput").hide();
                     $("#osy-batchOutput").empty();
                     $("#osy-runOutput").empty();
-                    $("#osy-runOutput").html('<pre class="log-output">' + response.cbc_message, response.cbc_stdmsg+ '</pre>');
+                    $("#osy-runOutput").empty().append($('<pre class="log-output">').text((response.cbc_message || '') + '\n' + (response.cbc_stdmsg || '')));
                     $("#osy-lpOutput").empty();
-                    $("#osy-lpOutput").html('<pre class="log-output">' + response.glpk_message, response.glpk_stdmsg+ '</pre>');
+                    $("#osy-lpOutput").empty().append($('<pre class="log-output">').text((response.glpk_message || '') + '\n' + (response.glpk_stdmsg || '')));
                     $("#osy-highsOutput").empty();
                     if (response.highs_message) {
                         $(".highsOutput").show();
-                        $("#osy-highsOutput").html('<pre class="log-output">' + response.highs_message + '</pre>');
+                        $("#osy-highsOutput").empty().append($('<pre class="log-output">').text(response.highs_message || ''));
                     } else {
                         $(".highsOutput").hide();
                     }
@@ -532,6 +538,9 @@ export default class DataFile {
                     Message.clearMessages();
                     Message.successOsy( response.timer);
                     Message.bigBoxSuccess('Run message', response.timer, 3000);
+                    if (response.cost_warning) {
+                        Message.warningOsy($('<div>').text(response.cost_warning).html());
+                    }
                 }
                 if (response.status_code == "warning") {
                     Message.loaderEnd();
@@ -541,13 +550,13 @@ export default class DataFile {
                     $(".batchOutput").hide();
                     $("#osy-batchOutput").empty();
                     $("#osy-runOutput").empty();
-                    $("#osy-runOutput").html('<pre class="log-output">' + response.cbc_message, response.cbc_stdmsg+ '</pre>');
+                    $("#osy-runOutput").empty().append($('<pre class="log-output">').text((response.cbc_message || '') + '\n' + (response.cbc_stdmsg || '')));
                     $("#osy-lpOutput").empty();
-                    $("#osy-lpOutput").html('<pre class="log-output">' + response.glpk_message, response.glpk_stdmsg+ '</pre>');
+                    $("#osy-lpOutput").empty().append($('<pre class="log-output">').text((response.glpk_message || '') + '\n' + (response.glpk_stdmsg || '')));
                     $("#osy-highsOutput").empty();
                     if (response.highs_message) {
                         $(".highsOutput").show();
-                        $("#osy-highsOutput").html('<pre class="log-output">' + response.highs_message + '</pre>');
+                        $("#osy-highsOutput").empty().append($('<pre class="log-output">').text(response.highs_message || ''));
                     } else {
                         $(".highsOutput").hide();
                     }
@@ -567,13 +576,13 @@ export default class DataFile {
                     $(".batchOutput").hide();
                     $("#osy-batchOutput").empty();
                     $("#osy-runOutput").empty();
-                    $("#osy-runOutput").html('<pre class="log-output">' + response.cbc_message, response.cbc_stdmsg+ '</pre>');
+                    $("#osy-runOutput").empty().append($('<pre class="log-output">').text((response.cbc_message || '') + '\n' + (response.cbc_stdmsg || '')));
                     $("#osy-lpOutput").empty();
-                    $("#osy-lpOutput").html('<pre class="log-output">' + response.glpk_message, response.glpk_stdmsg+ '</pre>');
+                    $("#osy-lpOutput").empty().append($('<pre class="log-output">').text((response.glpk_message || '') + '\n' + (response.glpk_stdmsg || '')));
                     $("#osy-highsOutput").empty();
                     if (response.highs_message) {
                         $(".highsOutput").show();
-                        $("#osy-highsOutput").html('<pre class="log-output">' + response.highs_message + '</pre>');
+                        $("#osy-highsOutput").empty().append($('<pre class="log-output">').text(response.highs_message || ''));
                     } else {
                         $(".highsOutput").hide();
                     }
@@ -591,6 +600,8 @@ export default class DataFile {
                 }
             })
             .catch(error => {
+                stopRunProgress(runningCase, runningName);
+                $('#osy-run').prop('disabled', false);
                 console.log('error ',error)
                 Message.loaderEnd();
                 Message.bigBoxDanger('Error message', error, null);
@@ -918,17 +929,17 @@ export default class DataFile {
                 Message.clearMessages();
 
                 if(response.status == 'Success'){
-                    Message.successOsy('<pre>' + response.msg + '</pre>');
+                    Message.successOsy($('<pre>').text(response.msg || '').prop('outerHTML'));
                     //Message.successOsy('<pre>Run finished in ' + response.time + ' \n' + response.msg + '</pre>');
                 }
                 else{
-                    Message.dangerOsy('<pre>' + response.msg + '</pre>');
+                    Message.dangerOsy($('<pre>').text(response.msg || '').prop('outerHTML'));
                 }
 
 
                 $(".batchOutput").show();
                 $("#osy-batchOutput").empty();
-                $("#osy-batchOutput").html('<pre class="log-output">' + response.log+ '</pre>');
+                $("#osy-batchOutput").empty().append($('<pre class="log-output">').text(response.log || ''));
 
             })
             .catch(error => {
@@ -1112,7 +1123,7 @@ function showRunSummary(casename, caserunname) {
             'New record</button>' +
             '<div style="margin-bottom:8px;">Solver: <b>' + (p.solver || '') + '</b>' +
             '  -  total <b>' + (p.total_seconds || 0).toFixed(2) + ' s</b>' +
-            (p.peak_mb ? '  -  peak memory <b>' + p.peak_mb + ' MB</b>' : '') + '</div>' +
+            (p.peak_mb ? '  -  peak memory (app + child processes) <b>' + p.peak_mb + ' MB</b>' : '') + '</div>' +
             (p.outcome ? '<div style="margin-bottom:6px;">Result: <b style="color:' +
                       (p.outcome === 'Optimal' ? '#3c763d' : '#a94442') + ';">' +
                       p.outcome + '</b>' +
@@ -1126,8 +1137,8 @@ function showRunSummary(casename, caserunname) {
                       'returned ' + money(p.objective) + '</div>' : '') +
             (hasObjective && fixedCost === null && (p.solver || '').indexOf('mosox') >= 0 ?
                       '<div style="margin-bottom:6px; font-size:12px; color:#8a6d3b;">' +
-                      'fixed cost not recovered on the mosox path, so this total may ' +
-                      'be short</div>' : '') +
+                      'Full system cost is unavailable for this custom model. The displayed value is ' +
+                      'the matrix objective only.</div>' : '') +
             (p.rows ? '<div style="margin-bottom:10px; color:#5f5e5a;">' +
                       (p.kind ? '<b>' + p.kind + '</b>  -  ' : '') +
                       Number(p.rows).toLocaleString() + ' rows  -  ' +

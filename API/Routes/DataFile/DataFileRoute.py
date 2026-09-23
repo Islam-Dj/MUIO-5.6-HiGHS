@@ -361,19 +361,7 @@ def run():
         highs_options = request.json.get('highs_options') or None
         logger.info("Starting optimization process for model -- %s -- caserun -- %s --!", casename, caserunname)
         txtFile = DataFile(casename)
-        response = None
-        try:
-            response = txtFile.run(solver, caserunname, highs_options=highs_options)
-        finally:
-            #always close the progress record, including when the run raises, so the
-            #interface never polls a stage that will never finish
-            from Classes.Case import RunProgressClass as Progress
-            Progress.finish(casename, caserunname,
-                            (response or {}).get('status_code', 'error'))
-            #one row per run, appended, so successive runs of the same case can be
-            #compared: solver, HiGHS settings actually in force, and stage timings
-            Progress.writeSummaryCsv(Path(Config.DATA_STORAGE, casename, 'res', caserunname),
-                                     casename, caserunname, solver, highs_options)
+        response = txtFile.run(solver, caserunname, highs_options=highs_options)
         logger.info("Optimization finished for model -- %s -- caserun -- %s --!", casename, caserunname) 
         #logger.info(f"\033[92mStarting optimization process for model -- {casename} -- caserun -- {caserunname} --!\033[0m")
         return jsonify(response), 200
@@ -397,7 +385,7 @@ def batchRun():
                 logger.info("Data file generation process started for model %s caserun %s!", modelname, caserun)
                 txtFile.generateDatafile(caserun)
                 logger.info("Data file generation process finished for model%s caserun %s!", modelname, caserun)
-            response = txtFile.batchRun( 'CBC', cases) 
+            response = txtFile.batchRun(request.json.get('solver', 'cbc'), cases) 
         end = time.time()  
         response['time'] = end-start 
         return jsonify(response), 200

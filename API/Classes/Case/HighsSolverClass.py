@@ -1,5 +1,6 @@
 from pathlib import Path
 import time
+import math
 
 class HighsSolver():
     """HiGHS optimization step for the MUIO solver pipeline.
@@ -8,7 +9,7 @@ class HighsSolver():
     HiGHS solves the LP, and the solution is written as a CBC-style results.txt so
     MUIO's existing parser (generateCSVfromCBC) works untouched.
 
-    The CBC-style contract (see DISCOVERY.md §3):
+    The CBC-style contract (see DISCOVERY.md Â§3):
       line 1:  'Optimal - objective value <float>'
       then one line per constraint row:  '<idx> <name>(<indices>) <activity> <dual>'
       then one line per variable column: '<idx> <name>(<indices>) <value> <reducedCost>'
@@ -25,7 +26,7 @@ class HighsSolver():
     }
 
     # Options the interface may set, with the values HiGHS 1.15 accepts. Anything
-    # not listed here is ignored rather than passed through, so a malformed or
+    # not listed here is rejected rather than passed through, so a malformed or
     # unexpected field cannot reach the solver.
     # The defaults reproduce exactly what was hard-coded before this was
     # configurable, so a run with no options behaves as it always did.
@@ -51,9 +52,11 @@ class HighsSolver():
     def normaliseOptions(options):
         """Return (clean dict, list of notes) from whatever the interface sent.
 
-        Unknown keys, blank values and values out of range are dropped with a note
-        rather than raising: a bad entry in the options panel must not stop a run.
+        Blank values use defaults. Unknown keys, invalid numbers and unsupported
+        combinations fail explicitly rather than silently changing the request.
         """
+        if options is not None and not isinstance(options, dict):
+            raise ValueError('HiGHS options must be an object.')
         clean, notes = {}, []
         for key, spec in HighsSolver.OPTIONS.items():
             raw = (options or {}).get(key, None)
@@ -66,29 +69,27 @@ class HighsSolver():
                 if raw in spec['values']:
                     clean[key] = raw
                 else:
-                    notes.append("ignored {}='{}' (expected one of {})".format(
+                    notes.append("invalid {}='{}' (expected one of {})".format(
                         key, raw, ', '.join(spec['values'])))
             else:
                 try:
                     value = int(raw) if spec['type'] == 'int' else float(raw)
                 except ValueError:
-                    notes.append("ignored {}='{}' (not a number)".format(key, raw))
+                    notes.append("invalid {}='{}' (not a number)".format(key, raw))
                     continue
-                if value < spec.get('min', float('-inf')) or value > spec.get('max', float('inf')):
-                    notes.append("ignored {}={} (out of range)".format(key, raw))
+                if not math.isfinite(value) or value < spec.get('min', float('-inf')) or value > spec.get('max', float('inf')):
+                    notes.append("invalid {}={} (out of range)".format(key, raw))
                     continue
                 clean[key] = value
 
         for key in (options or {}):
             if key not in HighsSolver.OPTIONS:
-                notes.append("ignored unknown option '{}'".format(key))
+                notes.append("unknown option '{}'".format(key))
 
-        # PDLP stops immediately and returns nothing when a time limit is set,
-        # whatever the limit. Dropping the option keeps such a run usable.
+        if notes:
+            raise ValueError('Invalid HiGHS options: ' + '; '.join(notes))
         if clean.get('solver') == 'pdlp' and 'time_limit' in clean:
-            clean.pop('time_limit')
-            notes.append('dropped time_limit: this HiGHS build aborts PDLP '
-                         'immediately when a time limit is set')
+            raise ValueError('This build does not reliably support PDLP with a time limit. Choose another algorithm or explicitly remove the limit.')
 
         return clean, notes
 
@@ -99,7 +100,7 @@ class HighsSolver():
 
     @staticmethod
     def solve(lp_path, results_path, options=None):
-        """Solve lp_path with HiGHS (IPM + crossover) and write a CBC-style solution
+        """Solve lp_path with HiGHS with validated options and write a CBC-style solution
         file to results_path.
 
         Returns (status_flag, custom_msg, log_text):
@@ -140,9 +141,12 @@ class HighsSolver():
             # method is usually slower. The interface can override it.
             clean, notes = HighsSolver.normaliseOptions(options)
             for key, value in clean.items():
-                h.setOptionValue(key, value)
+                if h.setOptionValue(key, value) != highspy.HighsStatus.kOk:
+                    raise ValueError('HiGHS rejected option {}={}'.format(key, value))
 
-            h.run()
+            run_status = h.run()
+            if run_status == highspy.HighsStatus.kError:
+                raise ValueError('HiGHS failed during optimization.')
 
             solve_time = time.time() - start_time - read_time
             model_status = h.getModelStatus()
@@ -212,6 +216,7 @@ class HighsSolver():
             for key, value in sorted(clean.items()):
                 f.write('{} = {}\n'.format(key, value))
 
+        sol_file.unlink(missing_ok=True)
         start_time = _time.time()
         proc = subprocess.run(
             # no algorithm is forced by default: HiGHS makes its own choice
@@ -249,9 +254,9 @@ class HighsSolver():
         row_names = lp.row_names_
         col_names = lp.col_names_
         row_value = sol.row_value
-        row_dual = sol.row_dual
+        row_dual = sol.row_dual if sol.dual_valid else [float('nan')] * lp.num_row_
         col_value = sol.col_value
-        col_dual = sol.col_dual
+        col_dual = sol.col_dual if sol.dual_valid else [float('nan')] * lp.num_col_
 
         # mosox-generated MPS files index names with brackets (Var[i,j]); MUIO's
         # parser expects glpsol/CBC-style parentheses (Var(i,j)). Translating is a

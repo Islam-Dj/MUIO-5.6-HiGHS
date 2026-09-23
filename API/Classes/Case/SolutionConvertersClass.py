@@ -112,9 +112,12 @@ class SolutionConverters():
 
         dual_row_by_name = dict(dual_rows)
         dual_col_by_name = dict(dual_cols)
-        rows = [(n, v, dual_row_by_name.get(n, 0.0)) for n, v in primal_rows]
-        cols = [(n, v, dual_col_by_name.get(n, 0.0)) for n, v in primal_cols]
-        SolutionConverters._write(results_path, objective, rows, cols)
+        rows = [(n, v, dual_row_by_name.get(n, float('nan'))) for n, v in primal_rows]
+        cols = [(n, v, dual_col_by_name.get(n, float('nan'))) for n, v in primal_cols]
+        if status == 'Optimal':
+            if not cols:
+                raise ValueError('Optimal HiGHS solution contains no columns.')
+            SolutionConverters._write(results_path, objective, rows, cols)
         return status or 'Unknown', objective, len(rows), len(cols)
 
     # ----------------------------------------------------------------- GLPK report
@@ -203,5 +206,48 @@ class SolutionConverters():
                 marginal = _num(line[mg_s:mg_e]) if len(line) > mg_s else 0.0
                 target.append((name, value, marginal))
 
-        SolutionConverters._write(results_path, objective, rows, cols)
+        if status == 'OPTIMAL':
+            if not cols:
+                raise ValueError('Optimal GLPK report contains no columns.')
+            SolutionConverters._write(results_path, objective, rows, cols)
         return status or 'UNKNOWN', objective, len(rows), len(cols)
+
+    @staticmethod
+    def fromGlpkRaw(solution_file, names_file, results_path):
+        """Use GLPK's full-precision machine format, including integer solutions."""
+        names = {'i': {}, 'j': {}}
+        with open(names_file) as handle:
+            for line in handle:
+                parts = line.split()
+                if len(parts) >= 4 and parts[0] == 'n' and parts[1] in names:
+                    names[parts[1]][int(parts[2])] = parts[3]
+        status, objective, kind = 'Unknown', None, None
+        values = {'i': [], 'j': []}
+        with open(solution_file) as handle:
+            for line in handle:
+                p = line.split()
+                if not p:
+                    continue
+                if p[0] == 's':
+                    kind = p[1]
+                    if kind == 'bas':
+                        status = 'Optimal' if p[4:6] == ['f', 'f'] else 'Non-optimal'
+                    elif kind in ('mip', 'ipt'):
+                        status = 'Optimal' if p[4] == 'o' else 'Non-optimal'
+                    else:
+                        raise ValueError('Unsupported GLPK solution type.')
+                    objective = float(p[-1])
+                elif p[0] in values:
+                    name = names[p[0]][int(p[1])]
+                    if kind == 'bas':
+                        primal, dual = float(p[3]), float(p[4])
+                    elif kind == 'mip':
+                        primal, dual = float(p[2]), float('nan')
+                    else:
+                        primal, dual = float(p[2]), float(p[3])
+                    values[p[0]].append((name, primal, dual))
+        if status == 'Optimal':
+            if objective is None or not values['j']:
+                raise ValueError('Incomplete GLPK solution.')
+            SolutionConverters._write(results_path, objective, values['i'], values['j'])
+        return status, objective
